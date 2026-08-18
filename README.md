@@ -4,8 +4,6 @@ Plan deeply, then autonomously build until it's done.
 
 `/supergoal <what you want>` recons your codebase, applies your saved preferences from memory, decomposes the work into the right number of phases for the task, gets one confirmation from you, then prints a **single ready-to-paste `/goal` command**. Paste it once and the rest is autonomous: every phase runs sequentially with built-in retry, fix-spec recovery, and per-phase memory writeback until `SUPERGOAL_RUN_COMPLETE`.
 
-Works on **Claude Code** and **Codex** (Codex CLI).
-
 ## How it works (at a glance)
 
 ```mermaid
