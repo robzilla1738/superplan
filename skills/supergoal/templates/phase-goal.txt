@@ -1,22 +1,32 @@
-# Phase spec template — write to {{RUN_ROOT}}/phases/phase-N.md
-# ({{RUN_ROOT}} is this run's namespaced dir, e.g. .supergoal/add-dark-mode-Ab3Kx9;
-#  substitute the concrete path along with the other {{...}} placeholders below.)
+# Phase spec template - write to {{RUN_ROOT}}/phases/phase-N.md
+# ({{RUN_ROOT}} is this run's namespaced dir, e.g. .supergoal/add-dark-mode-Ab3Kx9.)
 #
-# This is a free-form work spec the executing agent reads from disk.
-# No char budget. The agent follows {{RUN_ROOT}}/PROTOCOL.md for the
-# execution loop, failure recovery, and memory writeback.
+# The executing agent reads this file for human intent, but the source of
+# truth is {{RUN_ROOT}}/run.json. Keep this phase spec aligned with the
+# matching phase object in run.json.
 #
 # Replace {{...}} placeholders. Keep the SUPERGOAL_PHASE_START block
 # verbatim so validate-phase.sh and the runtime can anchor on it.
 
 SUPERGOAL_PHASE_START
-Phase: {{N}} of {{TOTAL}} — {{PHASE_NAME}}
+Phase: {{N}} of {{TOTAL}} - {{PHASE_NAME}}
+Phase id: {{N}}
 Task: {{ONE_LINE_TASK}}
 Type: {{TAGS}}
-Mandatory commands: {{COMMANDS_CSV}}
+Allowed paths: {{ALLOWED_PATHS_CSV}}
+Mandatory command ids: {{COMMAND_IDS_CSV}}
 Acceptance criteria: {{CRIT_COUNT}}
+Trust-prior criteria: {{TRUST_PRIOR_COUNT}}
 Evidence required: {{EVIDENCE_CSV}}
 Depends on phases: {{DEPS}}
+Run root: {{RUN_ROOT}}
+
+## Kernel contract
+
+- Canonical phase object: `{{RUN_ROOT}}/run.json` -> `phases[{{N}}]`
+- Evidence root: `{{RUN_ROOT}}/evidence/phase-{{N}}/`
+- Command logs: `{{RUN_ROOT}}/evidence/phase-{{N}}/commands/<command-id>.log`
+- Gate command: `python "{{RUN_ROOT}}/sg.py" gate-phase "{{RUN_ROOT}}" {{N}}`
 
 ## Why
 
@@ -28,22 +38,42 @@ Depends on phases: {{DEPS}}
 - {{WORK_BULLET_2}}
 - ...
 
-## Acceptance criteria (all must pass — verify each in transcript)
+## Allowed paths
 
-- {{CRITERION_1}}
-- {{CRITERION_2}}
+The phase may edit only these paths unless the gate-facing run manifest is updated before work continues:
+
+- {{ALLOWED_PATH_1}}
+- {{ALLOWED_PATH_2}}
 - ...
 
-## Mandatory commands (run each, surface last ~10 lines + exit code)
+## Acceptance criteria
 
-- {{COMMAND_1}}
-- {{COMMAND_2}}
+Each criterion must include its verification class. Use:
+
+- `mechanical` for checks a script/command/file inspection can verify.
+- `human` for subjective UI/content judgment that must be honestly labeled.
+- `trust-prior` only when the audit cannot re-check it mechanically.
+
+Criteria:
+
+- [{{VERIFICATION_1}}] {{CRITERION_1}} (evidence: {{CRITERION_1_EVIDENCE}})
+- [{{VERIFICATION_2}}] {{CRITERION_2}} (evidence: {{CRITERION_2_EVIDENCE}})
 - ...
 
-## Evidence required in transcript
+## Mandatory commands
 
-- {{EVIDENCE_1}}
-- {{EVIDENCE_2}}
+Run each command, save its log under `evidence/phase-{{N}}/commands/`, and include an explicit exit marker such as `exit 0`.
+
+- `{{COMMAND_ID_1}}`: `{{COMMAND_1}}`
+- `{{COMMAND_ID_2}}`: `{{COMMAND_2}}`
+- ...
+
+## Evidence required
+
+These paths are checked by `sg.py gate-phase` before `SUPERGOAL_PHASE_DONE` is allowed:
+
+- {{EVIDENCE_FILE_1}}
+- {{EVIDENCE_FILE_2}}
 - ...
 
 ## Notes
@@ -52,8 +82,7 @@ Depends on phases: {{DEPS}}
 
 ---
 
-The agent will, during execution, print SUPERGOAL_PHASE_START (above),
-do the work, then print SUPERGOAL_PHASE_VERIFY, MEMORY_SAVED, and
-SUPERGOAL_PHASE_DONE in order. On failure, the agent follows the
-3-strike recovery protocol in {{RUN_ROOT}}/PROTOCOL.md without further
-instruction needed here.
+During execution, print SUPERGOAL_PHASE_START, do the work, print
+SUPERGOAL_PHASE_VERIFY, run the gate command above, print MEMORY_SAVED,
+then print SUPERGOAL_PHASE_DONE only if the gate succeeds. On failure,
+follow the recovery protocol in {{RUN_ROOT}}/PROTOCOL.md.

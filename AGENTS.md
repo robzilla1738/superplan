@@ -4,10 +4,10 @@ Authoritative project doc. Any agent (Claude, Codex, or other) opening this repo
 
 ## What this repo is
 
-**Supergoal** is a Claude Code / Codex skill that turns a vague build request into a deeply-planned, autonomously-executed `/goal` run with built-in retry, fix-spec recovery, per-phase memory writeback, and a final audit pass that re-validates the work against the original plan.
+**Supergoal** is a Claude Code / Codex skill that turns a vague build request into a deeply-planned, autonomously-executed `/goal` run with a v1 run kernel: structured `run.json`, event telemetry, evidence files, mechanical phase gates, scoped execution checks, retry/fix-spec recovery, memory writeback, final audit, and an inspectable `report.html`.
 
 - Slash command: `/supergoal <task>`
-- Central mechanism: produces one ready-to-paste `/goal` command. The user pastes it once; the rest is autonomous.
+- Central mechanism: produces one ready-to-paste `/goal` command against a namespaced `.supergoal/<run-id>/` run contract. The user pastes it once; the rest is autonomous.
 - Works on: Claude Code (via plugin marketplace) and Codex CLI (via manual skill copy).
 - Public install: see `README.md`.
 
@@ -26,7 +26,7 @@ supergoal/
 ├── LICENSE                     MIT.
 ├── README.md                   Public-facing: what it is, install, use, Mermaid flow charts.
 ├── skills/supergoal/
-│   ├── SKILL.md                The skill itself. ~565 lines (grew with v0.7's Stage 0 namespace-claim section; the phase-loop section duplicates PROTOCOL.md and is a candidate for slimming next release).
+│   ├── SKILL.md                The skill itself. Includes v1 run kernel planning/dispatch rules.
 │   ├── references/             Progressive-disclosure docs the agent reads when needed.
 │   │   ├── planning-depth.md          What makes a plan deserve "super".
 │   │   ├── phase-design.md            How to slice phases (adaptive count, no cap).
@@ -37,27 +37,29 @@ supergoal/
 │   │   ├── detect-stack.sh     Brownfield stack/framework detection.
 │   │   ├── summarize-repo.sh   Compressed repo map.
 │   │   ├── claim-run.sh        Atomically claims a unique per-run dir under .supergoal/ (concurrent-run isolation). Tested by tests/claim-run.test.sh.
-│   │   ├── repo-state.sh       Complete working-tree-vs-baseline comparison (audit + cleanliness). Copied into the run's .supergoal/<run-id>/ dir at Stage 7.
+│   │   ├── sg.py               v1 run kernel: init-run, record-event, gate-phase, audit, resume, report, validate-run. Copied into the run dir at Stage 7.
+│   │   ├── repo-state.sh       Complete working-tree-vs-baseline comparison (audit + deliverables). Copied into the run's .supergoal/<run-id>/ dir at Stage 7.
 │   │   └── validate-phase.sh   Sanity-checks a phase spec has required markers.
 │   └── templates/              Files the planner copies into a run's `.supergoal/<run-id>/` dir.
-│       ├── ROADMAP.md          Phase plan with dependencies.
-│       ├── STATE.md            Live progress file.
-│       ├── phase-goal.txt      Phase spec skeleton (work, criteria, evidence, commands).
-│       └── PROTOCOL.md         Execution loop + failure recovery + final audit protocol.
+│       ├── ROADMAP.md          Phase plan rendered from run.json.
+│       ├── STATE.md            Human-readable progress mirror.
+│       ├── phase-goal.txt      Phase spec skeleton (allowed paths, verification classes, evidence, commands).
+│       └── PROTOCOL.md         v1 execution loop + evidence vault + gates + failure recovery + final audit/report protocol.
 └── tests/                      Repo-only (not shipped in the plugin payload).
     ├── claim-run.test.sh       Fixture tests for claim-run.sh (incl. the concurrent-claim race).
-    └── repo-state.test.sh      Fixture tests for repo-state.sh over throwaway git repos.
+    ├── repo-state.test.sh      Fixture tests for repo-state.sh over throwaway git repos.
+    └── sg-run-kernel.test.sh   Fixture tests for the v1 run kernel over throwaway git repos.
 ```
 
 ## What ships vs what doesn't
 
-- **Ships to consumers** (via marketplace install or manual clone): everything under `skills/supergoal/` — including `scripts/repo-state.sh` and `scripts/claim-run.sh` (the per-run namespace claimer) — the `/goal` session needs `repo-state.sh` at audit time (copied into the run's `.supergoal/<run-id>/` dir at Stage 7). The plugin manifest at `.claude-plugin/plugin.json` declares `skills: "./skills/"`.
+- **Ships to consumers** (via marketplace install or manual clone): everything under `skills/supergoal/` — including `scripts/sg.py`, `scripts/repo-state.sh`, and `scripts/claim-run.sh`. The `/goal` session needs `sg.py` and `repo-state.sh` at gate/audit time (copied into the run's `.supergoal/<run-id>/` dir at Stage 7). The plugin manifest at `.claude-plugin/plugin.json` declares `skills: "./skills/"`.
 - **Repo-only** (not part of the plugin payload): `README.md`, `CHANGELOG.md`, `LICENSE`, `AGENTS.md`, `CLAUDE.md`, `.gitignore`, `.gitattributes`, `tests/`. Docs / hygiene / fixtures.
 - **Marketplace entry** at `.claude-plugin/marketplace.json` is read by Claude Code when a user runs `/plugin marketplace add ...` against this repo. Points at the plugin at `./`.
 
 ## How the skill works (one paragraph)
 
-When invoked, the skill runs Stages 0–6.5 (preload memory, detect tools, intake clarifying questions, recon, deep think, decompose into N phases, write per-phase specs to the run's namespaced `.supergoal/<run-id>/` dir, **self-critique + plan review with revision menu**, **pre-flight smoke check against the deduplicated mandatory commands**). At Stage 7 it captures `Baseline ref:` into `STATE.md` and prints a ready-to-paste `/goal` command. The user pastes it. Inside the `/goal` session, the agent loops through each phase (read spec → do work → SUPERGOAL_PHASE_VERIFY including cleanliness counts → memory writeback → SUPERGOAL_PHASE_DONE), self-healing failures with a 3-strike retry/fix-spec/handoff protocol. After the last phase, the **final audit** re-reads the original `ROADMAP.md`, re-runs the deduplicated mandatory commands, spot-checks every acceptance criterion, **diff-checks every declared deliverable against `Baseline ref`**, and writes `audit-fix-<round>.md` for any gaps (up to 3 audit rounds). Only after `AUDIT_COMPLETE` does it print `SUPERGOAL_RUN_COMPLETE` — with an audit-coverage line that warns when more than 30% of checks were `trust-prior-verify`.
+When invoked, the skill runs Stages 0–6.5 (preload memory, detect tools, intake clarifying questions, recon, deep think, decompose into N phases, compile `run.json`, render markdown mirrors/specs, create the evidence vault, **self-critique + plan review with revision menu**, **pre-flight smoke check against the command registry**). At Stage 7 it captures `Baseline ref` into `run.json` and `STATE.md`, copies `sg.py`/`repo-state.sh`/`PROTOCOL.md`, validates the run kernel, and prints a ready-to-paste `/goal` command. The user pastes it. Inside the `/goal` session, the agent loops through each phase (read manifest/spec -> do scoped work -> save evidence -> SUPERGOAL_PHASE_VERIFY -> `sg.py gate-phase` -> memory writeback -> SUPERGOAL_PHASE_DONE), self-healing failures with a 3-strike retry/fix-spec/handoff protocol. After the last phase, the final audit runs `sg.py audit`, checks command logs/evidence/deliverables/trust debt, then writes `report.html` with `sg.py report`. Only after `AUDIT_COMPLETE` and `RUN_REPORT_WRITTEN` does it print `SUPERGOAL_RUN_COMPLETE`.
 
 ## Making changes
 
@@ -68,10 +70,10 @@ Edit `skills/supergoal/SKILL.md` or the files under `references/`, `scripts/`, `
 After editing:
 
 1. **Validate any manifests you touched** — `claude plugin validate .claude-plugin/plugin.json` and `claude plugin validate .claude-plugin/marketplace.json`.
-2. **Validate any phase spec template** — `bash skills/supergoal/scripts/validate-phase.sh skills/supergoal/templates/phase-goal.txt`. **If you touched `repo-state.sh` or the comparison logic, run** `bash tests/repo-state.test.sh` (expects `47 passed, 0 failed`); **if you touched `claim-run.sh` or the namespacing logic, run** `bash tests/claim-run.test.sh` (expects `23 passed, 0 failed`).
-3. **Bump the version** in `.claude-plugin/plugin.json` (`0.6.x → 0.6.x+1` for backwards-compatible patches, `0.x → 0.x+1` for new features, `x.0` for breaking changes). The marketplace cache only refreshes when this field changes.
+2. **Validate any phase spec template** — `bash skills/supergoal/scripts/validate-phase.sh skills/supergoal/templates/phase-goal.txt`. **If you touched `sg.py` or the run kernel contract, run** `bash tests/sg-run-kernel.test.sh`; **if you touched `repo-state.sh` or the comparison logic, run** `bash tests/repo-state.test.sh` (expects `47 passed, 0 failed`); **if you touched `claim-run.sh` or the namespacing logic, run** `bash tests/claim-run.test.sh` (expects `23 passed, 0 failed`).
+3. **Bump the version** in `.claude-plugin/plugin.json` (`x.y.z+1` for backwards-compatible patches, `x.y+1.0` for new features, `x+1.0.0` for breaking changes). The marketplace cache only refreshes when this field changes.
 4. **Add a CHANGELOG entry** at the top of `CHANGELOG.md`, Keep-a-Changelog format.
-5. **Commit, push, tag** with the new version: `git tag -a v0.7.x -m "..."`, `git push origin v0.7.x`.
+5. **Commit, push, tag** with the new version: `git tag -a v1.0.x -m "..."`, `git push origin v1.0.x`.
 6. **Re-sync to Codex**: `rm -rf ~/.codex/skills/supergoal && cp -R skills/supergoal ~/.codex/skills/supergoal`, then verify byte-identical with `diff -r skills/supergoal ~/.codex/skills/supergoal`.
 7. **Update this file's "Working state" line** to the new version + brief note on what shipped.
 
@@ -134,17 +136,20 @@ cp -R /Users/robert/Code/supergoal/skills/supergoal ~/.codex/skills/supergoal
 
 Named blocks the executing agent must print into the transcript. The host's `/goal` evaluator + the user both read them.
 
-- `SUPERGOAL_PHASE_START` — once per phase, at the start. Metadata only.
-- `SUPERGOAL_PHASE_VERIFY` — once per phase, before DONE. Each criterion pass/fail with evidence; engineering checks; **v0.6: `Cleanliness:` section** with grep counts vs `Baseline ref` (debug prints, session TODO/FIXME, dead imports). **v0.6.1: those counts run against the complete working tree via `bash <run-root>/repo-state.sh added-lines <Baseline ref>`, so uncommitted + untracked work is included — not just commits.** Non-zero cleanliness counts trigger 3-strike unless the phase spec declares `Cleanliness override:`.
+- `SUPERGOAL_RUN_KERNEL_READY` — printed after `sg.py validate-run` passes.
+- `SUPERGOAL_PHASE_START` — once per phase, at the start. Metadata mirrors `run.json`.
+- `SUPERGOAL_PHASE_VERIFY` — once per phase, before DONE. Each criterion pass/fail with verification class and evidence path; command log status; required evidence status.
+- `PHASE_GATE_VERIFY` / `SCOPE_DRIFT` / `TRUST_DEBT` — emitted by `sg.py gate-phase`; a pass is required before DONE.
 - `MEMORY_SAVED` — once per phase, between VERIFY and DONE. `<name>` or `none`.
 - `SUPERGOAL_PHASE_DONE` — once per phase, final block.
 - `FAILURE_PROBE` / `FAILURE_ESCALATE` / `FAILURE_HANDOFF` — 3-strike phase-criterion recovery.
-- `AUDIT_START` / `AUDIT_VERIFY` (**v0.6: includes a `Deliverables:` block vs `Baseline ref`; v0.6.1: that check compares the complete working tree via `bash <run-root>/repo-state.sh deliverable`, not a `..HEAD` commit range, and detects untracked deliverables**) / `AUDIT_GAPS` / `AUDIT_COMPLETE` (**v0.6: includes `Audit coverage:` line**) / `AUDIT_HANDOFF` — final audit pass.
-- `SUPERGOAL_RUN_COMPLETE` — only after `AUDIT_COMPLETE`. Run is done. **v0.6: prepends a `⚠ Audit coverage: …` warning banner when trust-prior is > 30% of total checks.**
+- `AUDIT_START` / `AUDIT_VERIFY` / `AUDIT_GAPS` / `AUDIT_COMPLETE` / `AUDIT_HANDOFF` — final audit pass through `sg.py audit`.
+- `RUN_REPORT_WRITTEN` — emitted by `sg.py report` after `report.html` is written.
+- `SUPERGOAL_RUN_COMPLETE` — only after `AUDIT_COMPLETE` and `RUN_REPORT_WRITTEN`.
 
-The `/goal` end-state requires `SUPERGOAL_RUN_COMPLETE` preceded by `AUDIT_COMPLETE` and one `SUPERGOAL_PHASE_DONE` per phase, with no `FAILURE_HANDOFF` or `AUDIT_HANDOFF`.
+The `/goal` end-state requires `AUDIT_COMPLETE`, `RUN_REPORT_WRITTEN`, and `SUPERGOAL_RUN_COMPLETE`, with one `SUPERGOAL_PHASE_DONE` per phase and no `FAILURE_HANDOFF` or `AUDIT_HANDOFF`.
 
-### Inside the planner session (v0.6)
+### Inside the planner session
 
 Before the user pastes `/goal`, the planner emits two additional named blocks the user sees in Stage 6/6.5:
 
@@ -153,9 +158,9 @@ Before the user pastes `/goal`, the planner emits two additional named blocks th
 
 These are not part of the `/goal` end-state — the `/goal` session hasn't started yet at this point — but they're load-bearing for plan quality.
 
-### Other v0.6 state
+### Other v1 state
 
-- **`Baseline ref:`** in `<run-root>/STATE.md` is captured at Stage 7 dispatch from `git rev-parse HEAD 2>/dev/null || echo "no-git"`. The audit's deliverable check and the cleanliness greps both compare the **complete working tree** (committed + staged + unstaged + deleted + untracked) against it via `scripts/repo-state.sh` — **not** a `<Baseline ref>..HEAD` commit range, which would miss every uncommitted change. The single documented strategy lives in `references/repo-state-comparison.md`.
+- **`run.baseline_ref`** in `<run-root>/run.json` is captured at Stage 7 dispatch from `git rev-parse HEAD 2>/dev/null || echo "no-git"` and mirrored into `STATE.md`. The audit's deliverable check compares the **complete working tree** (committed + staged + unstaged + deleted + untracked) against it via `scripts/repo-state.sh` — **not** a `<Baseline ref>..HEAD` commit range, which would miss every uncommitted change. The single documented strategy lives in `references/repo-state-comparison.md`.
 
 Full format spec: `skills/supergoal/references/goal-format.md`.
 
@@ -166,20 +171,22 @@ Full format spec: `skills/supergoal/references/goal-format.md`.
 - **`.gitignore` extension filter**: the file has no extension, so `find -name "*.md"` etc. skip it. When doing mass renames, include the gitignore separately.
 - **Codex install is a one-way copy**. There's no auto-update path. To update Codex users: `rm -rf ~/.codex/skills/supergoal && cp -R …` again. Document this in any breaking-change CHANGELOG entry.
 - **Memory writeback is per-phase, optional**. The agent emits `MEMORY_SAVED: <name>` or `MEMORY_SAVED: none`. Future runs preload these for the user — load-bearing for the "starts smarter" pitch.
-- **One run = one namespace; one working tree ≠ safe for two executions.** v0.7 namespacing (`.supergoal/<run-id>/` via `claim-run.sh`) isolates *planning* artifacts so concurrent `/supergoal` planning can't clobber. It does **not** make two `/goal` *executions* in the same working tree safe — they still edit the same source files. For real parallelism, each task needs its own `git worktree`. Don't "fix" the coexistence warning by implying parallel execution in one tree is safe.
+- **One run = one namespace; one working tree does not mean safe for two executions.** v1 namespacing (`.supergoal/<run-id>/` via `claim-run.sh`) isolates planning/runtime artifacts so concurrent `/supergoal` planning cannot clobber. It does **not** make two `/goal` executions in the same working tree safe; they still edit the same source files. For real parallelism, each task needs its own `git worktree`. Do not imply parallel execution in one tree is safe.
 - **Mermaid renders natively in GitHub README** but not always in every external markdown viewer. Stick to standard Mermaid syntax (flowchart TD / LR, subgraphs, classDef styling).
 
-## Working state (as of v0.7.0 — 2026-06-06)
+## Working state (as of v1.0.0 — 2026-06-07)
 
-- All planning + execution surfaces (Stages 0–6.5 + Phase loop + Final audit) are implemented and live, including the v0.6 additions, the v0.6.1 working-tree-audit fix, and the **v0.7.0 concurrent-run isolation**: every run claims its own `.supergoal/<run-id>/` namespace via `scripts/claim-run.sh` (`mktemp -d`, atomic create-or-fail), so two runs started in the same working tree can't overwrite each other's `STATE.md` / `ROADMAP.md` / `phases/`. `PROTOCOL.md` + phase specs use a `{{RUN_ROOT}}` placeholder substituted at Stage 7; the dispatched `/goal` line and the reference docs reference `<run-root>/…`. Stage 0 prints a coexistence warning (use a separate `git worktree` for parallel *execution*).
-- README headline, CHANGELOG top entry, and `plugin.json` `version` all aligned at v0.7.0.
-- Fixture tests pass: `tests/repo-state.test.sh` (47 assertions) and `tests/claim-run.test.sh` (23 assertions, incl. the 24-way concurrent-claim race). Both `claude plugin validate` calls and `validate-phase.sh` pass.
-- **Pending for the release PR:** commit/push, tag (`git tag -a v0.7.0`), Codex re-sync (`rm -rf ~/.codex/skills/supergoal && cp -R skills/supergoal ~/.codex/skills/supergoal`), and marketplace verification (`claude plugin marketplace update supergoal` → `claude plugin update supergoal@supergoal` → confirm `/plugin` lists `supergoal 0.7.0`).
+- v1 run kernel is implemented in `scripts/sg.py`: `init-run`, `record-event`, `gate-phase`, `audit`, `resume`, `report`, and `validate-run`.
+- New runs use `run.json` as canonical state, `events.jsonl` as the black box recorder, `evidence/phase-N/` as the proof vault, and `report.html` as the inspectable local report. Legacy markdown-only runs remain readable through `sg.py resume` / `sg.py report` fallback.
+- Phase gates enforce required evidence, command log exit markers, scope drift against `allowed_paths`, and trust debt reporting. Final audit checks manifest validity, completed phases, command logs, and deliverables through `repo-state.sh`.
+- README headline, CHANGELOG top entry, and `plugin.json` `version` are aligned at v1.0.0.
+- Fixture tests include `tests/sg-run-kernel.test.sh`, `tests/repo-state.test.sh`, `tests/claim-run.test.sh`, and `validate-phase.sh`.
+- **Pending for the release PR:** commit/push, tag (`git tag -a v1.0.0`), Codex re-sync (`rm -rf ~/.codex/skills/supergoal && cp -R skills/supergoal ~/.codex/skills/supergoal`), and marketplace verification (`claude plugin marketplace update supergoal` -> `claude plugin update supergoal@supergoal` -> confirm `/plugin` lists `supergoal 1.0.0`).
 
 ## Open work (none blocking)
 
-- v0.6 is additive: every existing transcript marker, STATE.md field, and protocol step still works. No migration needed.
-- Backlog (deferred from the v0.6 brainstorm, not in this release): plan-fitness checkpoint for runs ≥8 phases, `PHASE_SPEC_READ` calibration block, skill-binding written into phase specs, scope-driven Polish & Harden menu, resume-from-`BLOCKED` pathway. Plus the still-deferred removal candidates (`Type:` tag, `MEMORY_SAVED: none` lines, `STATE.md` engineering-check duplication, possibly collapsing 3-tier failure recovery to 2-tier). Revisit each once we have signal on how often the new checks actually catch things.
+- v1 is a breaking artifact-format change for new runs. Legacy markdown-only runs remain readable, but new planner output must compile `run.json` first.
+- Backlog after v1: plan-fitness scoring, richer criterion DSL checks, worktree launcher, host profile adaptation, memory quarantine/promotion, and a gallery of real `report.html` examples.
 - Observe how often Stage 6a self-critique produces findings vs. "clean" on real plans — if it's nearly always "clean", drop it next release per the honesty test in SKILL.md.
 
 ## Related

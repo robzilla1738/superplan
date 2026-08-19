@@ -1,6 +1,6 @@
 ---
 name: supergoal
-description: Plan and autonomously build a software task end-to-end. Triggered by `/supergoal`, "plan and ship X", "supercharged plan", "autonomous build", "plan it out and don't stop until it's done", "I don't want to babysit this", or any non-trivial feature/refactor/redesign the user wants driven to completion. Strongly prefer over a plain plan when the user signals "every aspect", "fully", "perfectly", "until done", or wants depth + autonomous follow-through. Recons the codebase, applies preloaded memory, researches best practices with whatever tools are available, decomposes into the right number of phases, gets one confirmation, then prepares a single ready-to-paste `/goal` command — one paste between you and done — that drives the entire chain to completion with built-in retry, fix-spec recovery, and per-phase memory writeback. Works on Claude Code and Codex.
+description: Plan and autonomously build a software task end-to-end with the Supergoal v1 run kernel. Triggered by `/supergoal`, "plan and ship X", "supercharged plan", "autonomous build", "plan it out and don't stop until it's done", "I don't want to babysit this", or any non-trivial feature/refactor/redesign the user wants driven to completion. Strongly prefer over a plain plan when the user signals "every aspect", "fully", "perfectly", "until done", or wants depth + autonomous follow-through. Recons the codebase, applies memory, writes a structured run.json contract, records events/evidence, enforces phase gates, gets one confirmation, then prepares a single ready-to-paste `/goal` command that drives execution to final audit and report generation. Works on Claude Code and Codex.
 argument-hint: <describe what you want built, fixed, or shipped>
 ---
 
@@ -31,22 +31,24 @@ If a phase can't be measured, it isn't a phase. Rewrite it until it can.
 2. **Recon** — parallel codebase + environment scan
 3. **Deep think** — research best practices with whatever tools exist (optional, not required); list top-3 risks + dependencies
 4. **Decompose** — derive phase count from the task itself; no fixed cap
-5. **Write phase specs** — one work-spec file per phase under `$SUPERGOAL_ROOT/phases/phase-N.md` (any length, no char budget)
-6. **Plan review** — show summary + concrete revision menu; wait for explicit go/no-go
-7. **Hand off one ready-to-paste `/goal`** with a short end-state condition; the user pastes once, and the agent inside that fresh `/goal` session executes phases sequentially with retry + fix-spec recovery + per-phase memory writeback, then runs a **final audit** that re-verifies the work against the original ROADMAP and self-heals any gaps before completion holds
+5. **Compile the run contract** — write `run.json` first, then render `ROADMAP.md`, `STATE.md`, and one phase spec per phase from that manifest
+6. **Plan review** — validate the run kernel, show summary + concrete revision menu; wait for explicit go/no-go
+7. **Hand off one ready-to-paste `/goal`** with a short end-state condition; the user pastes once, and the agent inside that fresh `/goal` session executes phases sequentially with event telemetry, evidence files, mechanical phase gates, retry + fix-spec recovery, memory writeback, final audit, and `report.html`
 
-Two human gates only: **clarifying questions for true gaps (Stage 1)** and **plan review (Stage 6)**. Everything else runs autonomously.
+Two human gates only: **clarifying questions for true gaps (Stage 1)** and **plan review (Stage 6)**. Everything else runs autonomously, but v1 makes the run inspectable through `run.json`, `events.jsonl`, `evidence/`, phase gates, and a generated report.
 
 ### Why one `/goal`, not a chain
 
-`/goal` in both Claude Code and Codex takes a **short end-state condition**, not a long task body. A fast evaluator checks the condition against the transcript after each turn and auto-continues until it holds. Supergoal v3 leverages this directly: one `/goal` covers the whole run; phase work lives in files the agent reads from disk; the condition is "all phases done, `SUPERGOAL_RUN_COMPLETE` printed." No char budget, no inter-session chain dispatch, no fragility.
+`/goal` in both Claude Code and Codex takes a **short end-state condition**, not a long task body. A fast evaluator checks the condition against the transcript after each turn and auto-continues until it holds. Supergoal v1 uses one `/goal` for the whole run; phase work lives in files the agent reads from disk; the condition is "all phases done, `AUDIT_COMPLETE`, `RUN_REPORT_WRITTEN`, then `SUPERGOAL_RUN_COMPLETE`." No char budget, no inter-session chain dispatch, no fragility.
 
 ## Locate the skill directory
 
 ```bash
 SUPERGOAL_DIR=$(dirname "$(ls -1 \
   "$HOME/.claude/skills/supergoal/SKILL.md" \
+  "$HOME/.codex/skills/supergoal/SKILL.md" \
   "$PWD/.claude/skills/supergoal/SKILL.md" \
+  "$PWD/.codex/skills/supergoal/SKILL.md" \
   2>/dev/null | head -n1)")
 export SUPERGOAL_DIR
 # $SUPERGOAL_BASE holds ALL runs. Each run gets its own namespaced subdir under it
@@ -80,6 +82,11 @@ for s in "$SUPERGOAL_BASE"/*/STATE.md "$SUPERGOAL_BASE"/STATE.md; do
   [ -f "$s" ] || continue
   grep -Eqi 'status:\**[[:space:]]*complete[[:space:]]*$' "$s" && continue
   ACTIVE_RUNS="${ACTIVE_RUNS}$(dirname "$s")"$'\n'
+done
+for r in "$SUPERGOAL_BASE"/*/run.json; do
+  [ -f "$r" ] || continue
+  grep -Eqi '"status"[[:space:]]*:[[:space:]]*"COMPLETE"' "$r" && continue
+  ACTIVE_RUNS="${ACTIVE_RUNS}$(dirname "$r")"$'\n'
 done
 printf 'Active runs in this tree:\n%s\n' "${ACTIVE_RUNS:-  (none)}"
 ```
@@ -139,7 +146,7 @@ Write detected tools to `$SUPERGOAL_ROOT/tools.md`. Stage 3 and the phase goals 
 
 ### Resume detection
 
-If you resolved to resume a run in "Claim the run namespace", read its `$SUPERGOAL_ROOT/STATE.md`. If `Status` is `IN_PROGRESS` / `READY_TO_DISPATCH` / `BLOCKED` with a phase pending, **do not re-plan**. Print a one-line "Resuming Supergoal from phase N (`$SUPERGOAL_ROOT`)" and jump straight to Stage 6 (plan review) with the existing artifacts, or directly to Stage 7 (dispatch) if the user confirms resume.
+If you resolved to resume a run in "Claim the run namespace", run `python "$SUPERGOAL_DIR/scripts/sg.py" resume "$SUPERGOAL_ROOT"` if `run.json` exists. For old markdown-only runs, the same command prints `LEGACY_RUN_FALLBACK` from `STATE.md`. If the run is `IN_PROGRESS` / `READY_TO_DISPATCH` / `BLOCKED` with a phase pending, **do not re-plan**. Print a one-line "Resuming Supergoal from phase N (`$SUPERGOAL_ROOT`)" and jump straight to Stage 6 (plan review) with the existing artifacts, or directly to Stage 7 (dispatch) if the user confirms resume.
 
 ---
 
@@ -263,37 +270,62 @@ Each phase has:
 - **Why** (1 sentence)
 - **Deliverables** (concrete files/features that will exist when done)
 - **Acceptance criteria** (5–10 measurable items)
-- **Mandatory commands** (build, typecheck, lint, test that must pass)
-- **Evidence required** (what the agent must print into the transcript to prove completion)
+- **Allowed paths** (the edit scope the phase gate will enforce)
+- **Criteria verification class** for each criterion: `mechanical`, `human`, or `trust-prior`
+- **Mandatory command ids** (from the run-level command registry)
+- **Evidence required** (files under `evidence/phase-N/`, not only transcript claims)
 - **Dependencies** (which prior phases must be done)
 
 ---
 
-## Stage 5 — Write the roadmap and phase specs
+## Stage 5 — Compile the run contract and render specs
 
-Three files, all under `$SUPERGOAL_ROOT/`:
+Write the structured contract first. Markdown files are mirrors for humans and the executor, not the source of truth.
 
-1. **`ROADMAP.md`** — the plan (template at `$SUPERGOAL_DIR/templates/ROADMAP.md`).
-2. **`STATE.md`** — live progress file the executor updates per phase (template at `$SUPERGOAL_DIR/templates/STATE.md`).
-3. **`phases/phase-N.md`** — one work-spec file per phase (template at `$SUPERGOAL_DIR/templates/phase-goal.txt`, renamed conceptually to "phase spec"). **Any length** — these are read from disk by the executor, not passed to `/goal`, so no char budget.
+Artifacts, all under `$SUPERGOAL_ROOT/`:
 
-Each phase spec must include these markers so the agent and evaluator both have stable anchors:
+1. **`run.json`** — canonical v1 manifest. Required top-level fields:
+   - `schema_version: "1.0"`
+   - `run`: id, title, task, status, current_phase, run_root, baseline_ref, host, created_at, last_update
+   - `commands`: command registry with `id`, `class`, `command`, `required`
+   - `phases`: ordered phase objects with `id`, `name`, `status`, `allowed_paths`, `depends_on`, `criteria`, `commands`, `deliverables`, `required_evidence`
+2. **`events.jsonl`** — append-only event stream. Start it with a `run.plan` event.
+3. **`ROADMAP.md`** — rendered from `run.json` (template at `$SUPERGOAL_DIR/templates/ROADMAP.md`).
+4. **`STATE.md`** — human-readable mirror (template at `$SUPERGOAL_DIR/templates/STATE.md`).
+5. **`phases/phase-N.md`** — one work-spec file per phase (template at `$SUPERGOAL_DIR/templates/phase-goal.txt`). Any length; these are read from disk by the executor, not passed to `/goal`.
+6. **`evidence/phase-N/{commands,diffs,screenshots}/`** — create these directories up front so the executor knows where proof belongs.
 
+Each phase object in `run.json` must include:
+
+```json
+{
+  "id": 1,
+  "name": "Build auth foundation",
+  "status": "pending",
+  "allowed_paths": ["src/auth/", "tests/auth/"],
+  "depends_on": [],
+  "criteria": [
+    {"id": "p1-c1", "text": "Auth middleware rejects anonymous requests", "verification": "mechanical", "evidence": ["commands/test.log"]}
+  ],
+  "commands": ["test"],
+  "deliverables": ["src/auth/middleware.ts", "tests/auth/middleware.test.ts"],
+  "required_evidence": ["commands/test.log", "diffs/summary.txt"]
+}
 ```
-SUPERGOAL_PHASE_START
-Phase: <N> of <total> — <name>
-Task: <one-line>
-Mandatory commands: <list>
-Acceptance criteria: <count>
-Evidence required: <list>
-Depends on phases: <list or "none">
 
-[... full work description, acceptance criteria, evidence requirements ...]
+Use only these verification classes:
 
-[Agent will print SUPERGOAL_PHASE_VERIFY and SUPERGOAL_PHASE_DONE here during execution]
+- `mechanical` — script, command, file inspection, grep, or deterministic check can verify it.
+- `human` — subjective UI/content judgment that must be honestly labeled.
+- `trust-prior` — audit cannot re-check it mechanically and must rely on phase evidence.
+
+Validate each spec with `bash $SUPERGOAL_DIR/scripts/validate-phase.sh "$SUPERGOAL_ROOT/phases/phase-N.md"`. Then run:
+
+```bash
+python "$SUPERGOAL_DIR/scripts/sg.py" validate-run "$SUPERGOAL_ROOT"
 ```
 
-Validate each spec with `bash $SUPERGOAL_DIR/scripts/validate-phase.sh "$SUPERGOAL_ROOT/phases/phase-N.md"` — it confirms the required markers exist. No char budget.
+Fix `PLAN_LINT_RED` output before Stage 6. No invalid v1 manifest may be dispatched.
 
 ---
 
@@ -305,14 +337,14 @@ Before any `/goal` is dispatched, show the user the full plan and **ask for expl
 
 Plan-time is the cheapest moment to catch the most expensive bugs (vague criteria, mis-sliced phases, weak dependencies). Before printing the summary, run **one** self-critique turn answering exactly three questions:
 
-1. **Falsifiability:** Is every acceptance criterion across every phase a yes/no test, not a vibe? Flag any that say "works", "good", "ready", "correct" without a measurable predicate.
+1. **Falsifiability:** Is every acceptance criterion across every phase a yes/no test, not a vibe? Flag any that say "works", "good", "ready", "correct" without a measurable predicate. Each criterion must have a valid `verification` class in `run.json`.
 2. **Phase atomicity:** Is any phase secretly two coherent units packed into one (deliverables that don't share a verify gate, names containing "and", split-able dependency lines)?
 3. **Weakest dependency:** Where would a partial failure cascade worst? (e.g., phase 2 unblocks 3, 4, and 5 — if 2 ships shaky, three phases inherit the bug.)
 
 **Output:**
 
 - If clean: record `Self-critique: clean.` and proceed.
-- If findings: list 1–3 specific findings (no padding). For falsifiability issues, **rewrite the offending criteria in place** in the affected `phase-N.md` files and `ROADMAP.md` before printing the summary. Re-run `validate-phase.sh` on any touched spec. Surface the rewrites in the Stage 6 summary so the user sees the post-critique version, not the pre-critique one.
+- If findings: list 1–3 specific findings (no padding). For falsifiability issues, **rewrite the offending criteria in place** in `run.json`, the affected `phase-N.md` files, and `ROADMAP.md` before printing the summary. Re-run `validate-phase.sh` on touched specs and `python "$SUPERGOAL_DIR/scripts/sg.py" validate-run "$SUPERGOAL_ROOT"`. Surface the rewrites in the Stage 6 summary so the user sees the post-critique version, not the pre-critique one.
 
 Honesty check: this pass must produce findings *or* a "clean" verdict per run. If it silently always says "clean" on real plans, it's theater and we remove it in the next release.
 
@@ -353,13 +385,20 @@ Self-critique:
   (criteria rewrites applied in-place if any were flagged)
 
 Artifacts:
+  Manifest: <run-root>/run.json (source of truth)
+  Events: <run-root>/events.jsonl
   Roadmap: <run-root>/ROADMAP.md
-  Progress: <run-root>/STATE.md (auto-updates)
+  Progress: <run-root>/STATE.md (human mirror)
   Phase specs: <run-root>/phases/phase-1..N.md
+  Evidence vault: <run-root>/evidence/
+
+Trust debt:
+  <mechanical> mechanical / <human> human / <trust-prior> trust-prior
+  <pct>% trust-prior (flag if >30%)
 
 Once you confirm, I'll print a ready-to-paste `/goal` line. Paste it
 once and the chain runs through to completion, with auto-retry and
-fix-spec recovery.
+fix-spec recovery, phase gates, final audit, and a local report.
 ```
 
 Then call `AskUserQuestion` with one question, header "Start chain?", offering **concrete revision modes** (not a vague "revise plan"):
@@ -369,7 +408,7 @@ Then call `AskUserQuestion` with one question, header "Start chain?", offering *
 - **Tweak a phase** — change criteria, scope, or commands for a specific phase
 - **Restructure phases** — merge, split, add, or remove a phase
 
-Keep options at 4 max. If the user picks any revision option, follow up with a second `AskUserQuestion` to pin down exactly what (e.g., "Which assumption?" with the assumptions listed). Apply the change, update ROADMAP/THINKING/STATE and the affected phase specs, re-run `validate-phase.sh` on each touched spec, then re-show the Stage 6 summary and ask again. Loop until "Start now" or user aborts.
+Keep options at 4 max. If the user picks any revision option, follow up with a second `AskUserQuestion` to pin down exactly what (e.g., "Which assumption?" with the assumptions listed). Apply the change, update `run.json`, ROADMAP/THINKING/STATE, and the affected phase specs, re-run `validate-phase.sh` on each touched spec, then run `python "$SUPERGOAL_DIR/scripts/sg.py" validate-run "$SUPERGOAL_ROOT"`. Re-show the Stage 6 summary and ask again. Loop until "Start now" or user aborts.
 
 **Wait for the answer.** Do not dispatch `/goal` until the user picks "Start now". Never assume confirmation; never start the chain on silence.
 
@@ -381,14 +420,16 @@ After Stage 6 returns "Start now" and **before** printing the `/goal` block, run
 
 **Procedure:**
 
-1. Read every `phase-N.md` spec and union their `Mandatory commands:` lines into a deduplicated set.
+1. Read `run.json` and union every phase's `commands` ids into a deduplicated set, using the run-level command registry for the actual shell command.
 2. Run each once. Capture exit code and last ~5 lines.
 3. **If all green:**
    - Append a `Notable events` line to `$SUPERGOAL_ROOT/STATE.md`: `<DATE> — Pre-flight green: <N> commands clean.`
+   - Record `preflight.pass` in `events.jsonl` with `python "$SUPERGOAL_DIR/scripts/sg.py" record-event "$SUPERGOAL_ROOT" --type preflight.pass --status pass --message "<N> commands clean"`.
    - Print `PREFLIGHT_GREEN` with the per-command summary.
    - Proceed to Stage 7.
 4. **If any red:**
    - Append `<DATE> — Pre-flight red: <cmd> exited <code>.` to `STATE.md`.
+   - Record `preflight.fail` in `events.jsonl`.
    - Print `PREFLIGHT_RED` with the failing command, exit code, last ~5 lines.
    - Re-show the Stage 6 summary with the failures surfaced and a revised menu (still 4 options to stay under the `AskUserQuestion` ceiling): **"Skip pre-flight, dispatch anyway"** (replaces "Start now" — the user might know the baseline is intentionally broken, e.g., phase 1's whole job is to fix it) / **"Adjust an assumption"** / **"Tweak a phase"** / **"Restructure phases"**. If "Skip pre-flight, dispatch anyway" → log `<DATE> — Pre-flight bypassed by user.` and proceed to Stage 7. Any other choice loops back through the normal Stage 6 revision flow; after the user finishes revising, Stage 6.5 re-runs.
 
@@ -400,25 +441,27 @@ After Stage 6 returns "Start now" and **before** printing the `/goal` block, run
 
 Slash commands on both Claude Code and Codex fire **only from user input** — agent message text is never parsed as a command. So Stage 7 is not an automatic dispatch; it's an honest one-paste handoff. After explicit "Start now" in Stage 6:
 
-1. Update `STATE.md`: `Status: READY_TO_DISPATCH`, `Current phase: 1`, and **capture the baseline ref** — set `Baseline ref:` to the output of `git rev-parse HEAD 2>/dev/null || echo "no-git"`. The audit reads this to diff deliverables against the working tree.
-2. Copy the operating manual and comparison helper into this run's namespace, baking the run root into the manual:
+1. Update `run.json`: `run.status = READY_TO_DISPATCH`, `run.current_phase = 1`, and **capture the baseline ref** — set `run.baseline_ref` to the output of `git rev-parse HEAD 2>/dev/null || echo "no-git"`. Mirror the same values into `STATE.md`. The audit reads the baseline to diff deliverables against the complete working tree.
+2. Copy the operating manual, run kernel, and comparison helper into this run's namespace, baking the run root into the manual:
    ```bash
    sed "s#{{RUN_ROOT}}#$SUPERGOAL_ROOT#g" "$SUPERGOAL_DIR/templates/PROTOCOL.md" > "$SUPERGOAL_ROOT/PROTOCOL.md"
+   cp "$SUPERGOAL_DIR/scripts/sg.py" "$SUPERGOAL_ROOT/sg.py"
    cp "$SUPERGOAL_DIR/scripts/repo-state.sh" "$SUPERGOAL_ROOT/repo-state.sh"
+   chmod +x "$SUPERGOAL_ROOT/sg.py" "$SUPERGOAL_ROOT/repo-state.sh" 2>/dev/null || true
    ```
-   `PROTOCOL.md` is the manual the executing agent reads at the start of the `/goal` session; the `sed` substitutes the concrete run root for every `{{RUN_ROOT}}` placeholder, so the agent reads `$SUPERGOAL_ROOT/STATE.md` (etc.), never a placeholder. `repo-state.sh` is the complete-working-tree comparison helper the cleanliness + deliverable checks invoke (strategy in `references/repo-state-comparison.md`); it takes paths as arguments, so it needs no substitution.
-3. Verify each `$SUPERGOAL_ROOT/phases/phase-N.md` exists; run `bash $SUPERGOAL_DIR/scripts/validate-phase.sh "$SUPERGOAL_ROOT/phases/phase-<N>.md"` on each.
+   `PROTOCOL.md` is the manual the executing agent reads at the start of the `/goal` session; the `sed` substitutes the concrete run root for every `{{RUN_ROOT}}` placeholder. `sg.py` is copied so the executor has the exact kernel version the planner validated. `repo-state.sh` is the complete-working-tree comparison helper the gate/audit invoke (strategy in `references/repo-state-comparison.md`).
+3. Verify each `$SUPERGOAL_ROOT/phases/phase-N.md` exists; run `bash $SUPERGOAL_DIR/scripts/validate-phase.sh "$SUPERGOAL_ROOT/phases/phase-<N>.md"` on each. Then run `python "$SUPERGOAL_ROOT/sg.py" validate-run "$SUPERGOAL_ROOT"` and require `SUPERGOAL_RUN_KERNEL_READY`.
 4. Print a fenced code block with the **ready-to-paste `/goal` command**. **Substitute the literal value of `$SUPERGOAL_ROOT` for every `<run-root>` below** (e.g. `.supergoal/add-dark-mode-Ab3Kx9`) — the pasted line must contain the real directory, not the variable or the `<run-root>` placeholder. The condition is short, instructional but measurable, and well under the 4000-char `/goal` argument limit:
 
 ````
 ```
-/goal "Execute all phases of <run-root>/ROADMAP.md sequentially. Read <run-root>/phases/phase-N.md for each phase; do the work; run mandatory commands; print SUPERGOAL_PHASE_VERIFY then SUPERGOAL_PHASE_DONE for each phase; follow the failure-recovery protocol in <run-root>/PROTOCOL.md if any criterion fails. After the last phase, run the FINAL AUDIT in <run-root>/PROTOCOL.md (re-verify against <run-root>/ROADMAP.md; re-run aggregated mandatory commands; spot-check criteria; on gaps, write <run-root>/phases/audit-fix-<round>.md and execute inline). Only after AUDIT_COMPLETE, print SUPERGOAL_RUN_COMPLETE. Done when SUPERGOAL_RUN_COMPLETE appears in the transcript with one SUPERGOAL_PHASE_DONE per phase, AUDIT_COMPLETE printed before SUPERGOAL_RUN_COMPLETE, and no FAILURE_HANDOFF or AUDIT_HANDOFF this run."
+/goal "Execute the Supergoal v1 run at <run-root>. First read <run-root>/PROTOCOL.md and validate <run-root>/run.json with python <run-root>/sg.py validate-run <run-root>. For each pending phase, read <run-root>/phases/phase-N.md, do the scoped work, save command logs and required proof under <run-root>/evidence/phase-N/, print SUPERGOAL_PHASE_VERIFY, then run python <run-root>/sg.py gate-phase <run-root> N before SUPERGOAL_PHASE_DONE. Follow <run-root>/PROTOCOL.md for 3-strike recovery. After all phases pass gates, run python <run-root>/sg.py audit <run-root>, then python <run-root>/sg.py report <run-root>. Done only when AUDIT_COMPLETE, RUN_REPORT_WRITTEN, and SUPERGOAL_RUN_COMPLETE appear, with no FAILURE_HANDOFF or AUDIT_HANDOFF this run."
 ```
 ````
 
 5. Follow the fenced block with **exactly this one-line instruction**:
 
-> **Paste the `/goal` line above into your input to dispatch the chain.** From there it runs autonomously — auto-retry, fix-spec recovery, per-phase memory writeback — until `SUPERGOAL_RUN_COMPLETE` appears.
+> **Paste the `/goal` line above into your input to dispatch the chain.** From there it runs autonomously — event telemetry, evidence files, phase gates, auto-retry, fix-spec recovery, memory writeback, audit, and report — until `SUPERGOAL_RUN_COMPLETE` appears.
 
 6. **Stop.** Do not generate any further output. The Supergoal invocation ends here. The user's paste begins the autonomous run under a fresh `/goal` session, which reads `PROTOCOL.md`, `ROADMAP.md`, `STATE.md`, and the phase specs from disk and runs the loop documented in the next sections.
 
@@ -428,51 +471,35 @@ Once `/goal` is active (you'll see the `◎ /goal active` indicator on Claude Co
 
 ## Phase execution loop (inside the single `/goal` session)
 
-The agent's loop, repeated until `SUPERGOAL_RUN_COMPLETE`:
+The executor's authoritative loop lives in `<run-root>/PROTOCOL.md`. Short version:
 
-1. Read `STATE.md` → find current phase N.
-2. Read `<run-root>/phases/phase-N.md` → full work spec.
-3. Print `SUPERGOAL_PHASE_START` block with values from the spec.
-4. Do the work; run mandatory commands; surface evidence into the transcript.
-5. Print `SUPERGOAL_PHASE_VERIFY` block (every criterion `pass|fail` + engineering checks + **cleanliness checks** — grep `bash <run-root>/repo-state.sh added-lines <Baseline ref>` (complete added/new lines since baseline, **including uncommitted and untracked work**) for stack-specific debug prints, session TODO/FIXME, dead imports; non-zero counts trigger 3-strike unless the phase spec declares `Cleanliness override:`).
-6. **Memory writeback check** — anything non-obvious learned? If yes, write a memory file under the detected MEM_DIR; print `MEMORY_SAVED: <name>` (or `MEMORY_SAVED: none`).
-7. Print `SUPERGOAL_PHASE_DONE`, update `STATE.md` (mark phase N complete, set Current phase = N+1, append events line).
-8. **User-interrupt check** — if a new user message has arrived since the last turn, pause and address it before continuing.
-9. If N < total: loop to step 1 for phase N+1.
-10. If N == total: do **not** print `SUPERGOAL_RUN_COMPLETE` yet. Run the **Final audit** (next section). Only after `AUDIT_COMPLETE`, print `SUPERGOAL_RUN_COMPLETE` with a 5-line summary. The `/goal` condition is now satisfied and clears.
+1. Validate `run.json` with `python <run-root>/sg.py validate-run <run-root>`.
+2. Read the next pending phase from `run.json`, then the matching `phases/phase-N.md` spec.
+3. Record phase start in `events.jsonl`.
+4. Do the scoped work. Keep edits inside `allowed_paths` unless the manifest is deliberately revised before continuing.
+5. Save command logs under `evidence/phase-N/commands/<command-id>.log`; each log must include an explicit exit marker.
+6. Save required evidence under `evidence/phase-N/`.
+7. Print `SUPERGOAL_PHASE_VERIFY` with criterion status, verification class, and evidence path.
+8. Run `python <run-root>/sg.py gate-phase <run-root> N`. This verifies required evidence, command logs, scope drift, and trust debt.
+9. Only after the gate passes, print `MEMORY_SAVED` and `SUPERGOAL_PHASE_DONE`.
+10. After all phases pass, run `python <run-root>/sg.py audit <run-root>` and `python <run-root>/sg.py report <run-root>`. Only then print `SUPERGOAL_RUN_COMPLETE`.
 
 ### Final audit (Stage 10 of the loop — before completion)
 
-Per-phase VERIFY blocks are self-reports. A phase can pass its own check while a later phase silently breaks it (a type added in phase 2 violated in phase 5; tests that passed mid-run break after refactor; etc.). The audit closes that loophole by re-validating against the **original** ROADMAP.md, not against the run's own self-reports.
+Per-phase VERIFY blocks are self-reports. A phase can pass its own check while a later phase silently breaks it. The v1 audit uses `run.json`, command logs, required evidence, deliverables checked through `repo-state.sh`, and event history.
 
-The audit runs once after the final phase. If it finds gaps, it writes a focused fix spec and re-runs itself. Cap at 3 audit rounds; on the 3rd round's failure, `AUDIT_HANDOFF`.
+The audit runs after the final phase. If it finds gaps, it writes a focused fix spec and re-runs itself. Cap at 3 audit rounds; on the 3rd round's failure, `AUDIT_HANDOFF`.
 
 **Audit steps:**
 
-1. Print `AUDIT_START` with round number, total phase count, criteria count, and the deduplicated set of mandatory commands to re-run.
-2. **Re-read `ROADMAP.md`** — pull every phase's acceptance criteria fresh from the original plan. Do not trust prior VERIFY summaries.
-3. **Phase completeness check** — scan the transcript: does every phase 1..N have a `SUPERGOAL_PHASE_DONE` block? Surface any missing.
-4. **Re-run aggregated mandatory commands** once each (build, typecheck, lint, full test suite). Surface last ~10 lines + exit code for each. Any non-zero exit → an `AUDIT_GAP`.
-5. **Spot-check verifiable criteria** — for each acceptance criterion across all phases:
-   - "File X exists" / "Function Y exported" / "Config key Z set" / "No `console.log` in app code" → re-check via `ls`/`grep`/`cat`.
-   - "Screenshot showed X" / "Manual smoke test passed" / other non-deterministic checks → mark `trust-prior-verify`, do not re-run.
-5b. **Deliverable check** — for each phase block in `ROADMAP.md`, parse the `**Deliverables:**` bullets. For each bullet that names a file path or glob, run `bash <run-root>/repo-state.sh deliverable <Baseline ref> "<path>"` — it checks the **complete working tree** (committed + staged + unstaged + deleted) against the baseline and detects untracked new files separately. `missing` (exit 1) → `AUDIT_GAP: phase <N> deliverable "<bullet>" not present`. Repository ground-truth — catches "agent said done but didn't ship," even when the run never committed. Strategy: `references/repo-state-comparison.md`.
-6. Print `AUDIT_VERIFY` block:
-   - Per-phase status (DONE present or missing)
-   - Each mandatory command's exit code
-   - Each criterion's `pass | fail | trust-prior-verify` with evidence
-   - `Deliverables:` block from step 5b — `phase N / "<bullet>": present | missing`
-7. **If any gaps:**
-   - Print `AUDIT_GAPS` with the list.
-   - Write `<run-root>/phases/audit-fix-<round>.md` — a focused fix spec targeting **only** the failing criteria, with the original phase's VERIFY as the success gate, scope creep forbidden.
-   - Execute the fix spec inline (same agent, same `/goal`, same 3-strike per-criterion protocol from regular phases).
-   - On fix success: loop back to step 1 (round + 1). On 3rd round's failure: print `AUDIT_HANDOFF` (full gap history + suggested next move), update `STATE.md` to `BLOCKED`, stop. Do not print `SUPERGOAL_RUN_COMPLETE`.
-8. **If clean:**
-   - Compute `audit coverage` = `re_verified / (re_verified + trust_prior)` as a percentage (where `re_verified` = criteria with `pass` + deliverables marked `present`; `trust_prior` = criteria marked `trust-prior-verify`).
-   - Print `AUDIT_COMPLETE` with phases verified, commands re-run clean, criteria pass/trust-prior counts, deliverables present/missing counts, and the audit coverage %.
-   - Print `SUPERGOAL_RUN_COMPLETE`. If `trust_prior / (re_verified + trust_prior)` > 30%, prepend an honesty banner: `⚠ Audit coverage: X re-verified, Y trust-prior (Z%). Eyeball UI/UX before merging.` Below 30%, print the plain coverage line without the warning prefix.
+1. Print `AUDIT_START` with round number, total phase count, criteria count, command ids, and trust-prior count.
+2. Run `python <run-root>/sg.py audit <run-root>`.
+3. If it prints `AUDIT_GAPS`, write `<run-root>/phases/audit-fix-<round>.md`, execute only the focused fix, record the gap in `events.jsonl`, and rerun the audit.
+4. On the 3rd failed audit round, print `AUDIT_HANDOFF`, update `run.json` and `STATE.md` to `BLOCKED`, run `python <run-root>/sg.py report <run-root>`, and stop.
+5. If it prints `AUDIT_COMPLETE`, run `python <run-root>/sg.py report <run-root>` and require `RUN_REPORT_WRITTEN`.
+6. Print `SUPERGOAL_RUN_COMPLETE`. If trust-prior criteria exceed 30% of total criteria, prepend an honesty banner requiring human review before merge.
 
-The audit is the difference between "every phase passed its own self-report" and "the final state matches the plan I originally approved." That is the bar.
+The audit is the difference between "the agent said every phase passed" and "the final state matches the run contract I approved." That is the bar.
 
 ### Failure recovery (3-strike, built into the protocol)
 
@@ -554,10 +581,11 @@ Write the memory file under the detected MEM_DIR using the standard `name` / `de
 - `scripts/detect-env.sh` — greenfield environment recon
 - `scripts/summarize-repo.sh` — compressed repo map (brownfield)
 - `scripts/validate-phase.sh` — checks a phase spec has the required SUPERGOAL_PHASE_START marker and a non-empty acceptance criteria section
+- `scripts/sg.py` — v1 run kernel: init-run, record-event, gate-phase, audit, resume, report, validate-run
 
 ## Templates
 
-- `templates/ROADMAP.md` — phase plan with dependencies
-- `templates/STATE.md` — live progress file
-- `templates/phase-goal.txt` — phase spec skeleton (work, criteria, evidence, mandatory commands)
-- `templates/PROTOCOL.md` — phase execution loop, failure recovery, memory writeback (copied to `<run-root>/PROTOCOL.md` at dispatch, with `{{RUN_ROOT}}` substituted for the run root)
+- `templates/ROADMAP.md` — rendered plan with command registry, trust debt, allowed paths, and deliverables
+- `templates/STATE.md` — human-readable progress mirror; `run.json` is canonical
+- `templates/phase-goal.txt` — phase spec skeleton with allowed paths, verification classes, evidence files, and gate command
+- `templates/PROTOCOL.md` — v1 execution loop, evidence vault, phase gate, failure recovery, audit, and report generation (copied to `<run-root>/PROTOCOL.md` at dispatch, with `{{RUN_ROOT}}` substituted for the run root)

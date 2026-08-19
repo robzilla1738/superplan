@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Supergoal">
+  <rect width="64" height="64" rx="14" fill="#111827"/>
+  <path d="M17 37.5 29.5 16h17L34 37.5h13L24.5 59l7-21.5H17Z" fill="#69e6bd"/>
+  <path d="M29.5 16h17L34 37.5h13" fill="none" stroke="#8eb7ff" stroke-width="3" stroke-linejoin="round"/>
+</svg>

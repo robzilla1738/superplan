@@ -1,7 +1,7 @@
 {
   "name": "supergoal",
-  "description": "Plan and autonomously build a software task end-to-end. Recons the codebase, applies preloaded memory, decomposes into the right number of phases, gets one confirmation, then prepares a single ready-to-paste /goal command — one paste between you and done — that drives execution to completion with built-in retry, fix-spec recovery, and per-phase memory writeback. Works on Claude Code and Codex.",
-  "version": "0.7.0",
+  "description": "Plan and autonomously build a software task end-to-end with a v1 run kernel: structured run.json, event telemetry, evidence files, mechanical phase gates, scoped execution checks, retry/fix-spec recovery, final audit, and report.html. Works on Claude Code and Codex.",
+  "version": "1.0.0",
   "author": {
     "name": "Robert Courson"
   },

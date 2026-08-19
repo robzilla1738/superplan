@@ -1,15 +1,18 @@
 {
   "name": "supergoal",
-  "description": "Supergoal marketplace — deep planning + autonomous /goal-driven execution for Claude Code and Codex.",
+  "description": "Supergoal marketplace — agent OS run kernel for deep planning + autonomous /goal-driven execution on Claude Code and Codex.",
   "owner": {
     "name": "Robert Courson",
     "url": "https://github.com/robzilla1738"
+  },
+  "metadata": {
+    "description": "Supergoal turns autonomous coding work into structured, gated, inspectable run artifacts for Claude Code and Codex."
   },
   "plugins": [
     {
       "name": "supergoal",
       "source": "./",
-      "description": "Plan and autonomously build a software task end-to-end. One ready-to-paste /goal, adaptive phase count, memory preload + writeback, 3-strike self-healing recovery. Works on Claude Code and Codex."
+      "description": "Plan and autonomously build a software task end-to-end. One ready-to-paste /goal backed by run.json, event telemetry, evidence files, phase gates, final audit, and report.html. Works on Claude Code and Codex."
     }
   ]
 }

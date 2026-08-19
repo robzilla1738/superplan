@@ -14,45 +14,68 @@ Key implications:
 
 ## Supergoal's single-`/goal` shape
 
-Supergoal uses **one** `/goal` per run, dispatched by the **user** at the end of Stage 7. Slash commands fire only from user input on both Claude Code and Codex — the planner cannot fire `/goal` from its own message text. Stage 7's job is to write all phase specs to disk, then print a copy-paste-ready `/goal` block. The user pastes once; from there, the run is autonomous.
+Supergoal uses **one** `/goal` per run, dispatched by the **user** at the end of Stage 7. Slash commands fire only from user input on both Claude Code and Codex — the planner cannot fire `/goal` from its own message text. Stage 7's job is to write `run.json`, markdown mirrors, phase specs, the run kernel, and the protocol to disk, then print a copy-paste-ready `/goal` block. The user pastes once; from there, the run is autonomous.
 
 The condition is (`<run-root>` is this run's namespaced artifact dir, e.g. `.supergoal/add-dark-mode-Ab3Kx9`; the planner substitutes the concrete path before printing the block so the pasted line carries the real directory — never the placeholder):
 
 ```
-Execute all phases of <run-root>/ROADMAP.md sequentially.
-Read <run-root>/phases/phase-N.md for each phase; do the work;
-run mandatory commands; print SUPERGOAL_PHASE_VERIFY then
-SUPERGOAL_PHASE_DONE for each phase; follow the failure-recovery
-protocol in <run-root>/PROTOCOL.md if any criterion fails. After
-the last phase, run the FINAL AUDIT in <run-root>/PROTOCOL.md (re-verify
-against <run-root>/ROADMAP.md; re-run aggregated mandatory commands;
-spot-check criteria; on gaps, write <run-root>/phases/audit-fix-<round>.md
-and execute inline). Only after AUDIT_COMPLETE, print
-SUPERGOAL_RUN_COMPLETE.
+Execute the Supergoal v1 run at <run-root>. First read
+<run-root>/PROTOCOL.md and validate <run-root>/run.json with
+python <run-root>/sg.py validate-run <run-root>. For each pending phase,
+read <run-root>/phases/phase-N.md, do the scoped work, save command logs
+and required proof under <run-root>/evidence/phase-N/, print
+SUPERGOAL_PHASE_VERIFY, then run python <run-root>/sg.py gate-phase
+<run-root> N before SUPERGOAL_PHASE_DONE. Follow <run-root>/PROTOCOL.md
+for 3-strike recovery. After all phases pass gates, run python
+<run-root>/sg.py audit <run-root>, then python <run-root>/sg.py report
+<run-root>.
 
-Done when SUPERGOAL_RUN_COMPLETE appears in the transcript with
-one SUPERGOAL_PHASE_DONE per phase, AUDIT_COMPLETE printed before
-SUPERGOAL_RUN_COMPLETE, and no FAILURE_HANDOFF or AUDIT_HANDOFF
+Done only when AUDIT_COMPLETE, RUN_REPORT_WRITTEN, and
+SUPERGOAL_RUN_COMPLETE appear, with no FAILURE_HANDOFF or AUDIT_HANDOFF
 this run.
 ```
 
-This works on both hosts. There is no per-phase `/goal` dispatch and no inter-session chain — once active, a single `/goal` session reads PROTOCOL.md, loops through every phase spec, runs the final audit, and only completes when the audit is clean.
+This works on both hosts. There is no per-phase `/goal` dispatch and no inter-session chain — once active, a single `/goal` session reads PROTOCOL.md, uses `run.json` as the source of truth, loops through every phase spec, runs phase gates, runs the final audit, writes the report, and only completes when the audit is clean.
 
 ## Required transcript blocks (Supergoal-specific)
 
-The phase specs and PROTOCOL.md require the agent to print these named blocks during execution. They are what the human-readable evaluator (you, watching) AND the host evaluator both rely on.
+The phase specs and PROTOCOL.md require the agent to print these named blocks during execution. In v1 they are transcript mirrors of structured state, not the source of truth.
+
+### `SUPERGOAL_RUN_KERNEL_READY`
+
+Printed after `python <run-root>/sg.py validate-run <run-root>` passes.
+
+### `PHASE_GATE_VERIFY`
+
+Printed by `python <run-root>/sg.py gate-phase <run-root> N`. A pass is required before `SUPERGOAL_PHASE_DONE`.
+
+### `SCOPE_DRIFT`
+
+Printed by the phase gate when changed files are outside the phase's `allowed_paths`.
+
+### `TRUST_DEBT`
+
+Printed by validation and phase gates as `<trust-prior>/<total> trust-prior (<pct>%)`.
+
+### `RUN_REPORT_WRITTEN`
+
+Printed by `python <run-root>/sg.py report <run-root>` after `report.html` is written.
 
 ### `SUPERGOAL_PHASE_START` (once per phase, at execution start)
 
 ```
 SUPERGOAL_PHASE_START
 Phase: <N> of <total> — <name>
+Phase id: <N>
 Task: <one-line from ROADMAP.md>
 Type: <greenfield|brownfield|bugfix|refactor|ui>
-Mandatory commands: <comma-separated list>
+Allowed paths: <comma-separated path scopes>
+Mandatory command ids: <comma-separated command ids from run.json>
 Acceptance criteria: <count>
-Evidence required: <comma-separated types>
+Trust-prior criteria: <count>
+Evidence required: <comma-separated required evidence files>
 Depends on phases: <list, or "none">
+Run root: <run-root>
 ```
 
 ### `SUPERGOAL_PHASE_VERIFY` (once per phase, before DONE)
@@ -60,21 +83,16 @@ Depends on phases: <list, or "none">
 ```
 SUPERGOAL_PHASE_VERIFY
 Acceptance:
-- <criterion 1>: <pass|fail> — <evidence>
-- <criterion 2>: <pass|fail> — <evidence>
+- <criterion 1>: <pass|fail> / <mechanical|human|trust-prior> — <evidence path>
+- <criterion 2>: <pass|fail> / <mechanical|human|trust-prior> — <evidence path>
 ...
 Engineering:
-- build: <pass|fail>
-- typecheck: <pass|fail>
-- lint: <pass|fail|pre-existing>
-- tests: <pass|fail|N pre-existing>
-Cleanliness (grep `repo-state.sh added-lines` vs Baseline ref — incl. uncommitted + untracked; non-zero unless phase spec sets "Cleanliness override:"):
-- debug prints added (console.log / print / etc.): <count>
-- session TODO/FIXME added: <count>
-- dead imports added: <count>
-Files changed: <count>
-Notable diffs:
-- <file>: <one-line summary>
+- <command id>: <pass|fail> — <evidence/phase-N/commands/<id>.log>
+Evidence files:
+- <required evidence path>: <present|missing>
+Gate:
+- command: python <run-root>/sg.py gate-phase <run-root> N
+- status: <pass|fail>
 ```
 
 ### `MEMORY_SAVED` (once per phase, between VERIFY and DONE)

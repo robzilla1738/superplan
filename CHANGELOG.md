@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-06-07
+
+Supergoal v1 turns the project from a markdown protocol into an inspectable run kernel. New runs compile a structured `run.json` contract first, record events, save evidence, enforce phase gates, audit deliverables mechanically, and write a local HTML report.
+
+### Breaking
+
+- **New canonical artifact format.** New runs use `.supergoal/<run-id>/run.json` as the source of truth. `ROADMAP.md`, `STATE.md`, and phase specs are now human-readable mirrors.
+- **Phase completion now requires a mechanical gate.** Executors must run `python <run-root>/sg.py gate-phase <run-root> N` before printing `SUPERGOAL_PHASE_DONE`.
+- **Final completion now requires a report.** The `/goal` end-state requires `AUDIT_COMPLETE`, `RUN_REPORT_WRITTEN`, and `SUPERGOAL_RUN_COMPLETE`.
+
+### Added
+
+- **`scripts/sg.py` run kernel.** Standard-library Python commands: `init-run`, `record-event`, `gate-phase`, `audit`, `resume`, `report`, and `validate-run`.
+- **Black box recorder.** `events.jsonl` records run/phase/failure/audit/report events.
+- **Evidence vault.** `evidence/phase-N/commands`, `diffs`, and `screenshots` are first-class run artifacts.
+- **Scope firewall.** Phase gates compare changed files against each phase's `allowed_paths` and print `SCOPE_DRIFT` on out-of-scope edits.
+- **Trust debt meter.** Criteria are classified as `mechanical`, `human`, or `trust-prior`; validation and gates print `TRUST_DEBT`.
+- **Run report.** `sg.py report` writes `<run-root>/report.html` with phase status, trust debt, evidence counts, and event history.
+- **Legacy fallback.** Markdown-only runs remain readable through `sg.py resume` and `sg.py report`.
+- **`tests/sg-run-kernel.test.sh`.** Fixture coverage for validation, missing evidence, failed commands, scope drift, trust debt, resume, blocked history, audit gaps, and report generation.
+
+### Changed
+
+- **Stage 5 now compiles `run.json` before markdown.** The roadmap, state, and phase specs are rendered from the structured contract.
+- **Stage 7 copies `sg.py` into the run namespace** alongside `PROTOCOL.md` and `repo-state.sh`.
+- **Templates and references now describe v1 blocks:** `SUPERGOAL_RUN_KERNEL_READY`, `PHASE_GATE_VERIFY`, `SCOPE_DRIFT`, `TRUST_DEBT`, and `RUN_REPORT_WRITTEN`.
+- **GitHub Pages docs shift from promise to proof.** The public surface now foregrounds the run kernel, mechanical verification, trust debt, and example report shape.
+
+### Migration
+
+Existing `.supergoal/<run-id>/` markdown-only runs can still be resumed as legacy runs, but new runs use the v1 `run.json` format. Codex users must re-sync the skill directory to pick up `sg.py` and the new templates.
+
 ## [0.7.0] — 2026-06-06
 
 Concurrent-run isolation. Two `/supergoal` runs started in the same working tree both defaulted to a single flat `.supergoal/` directory and overwrote each other's `STATE.md` / `ROADMAP.md` / `phases/` / `applied-memories.md` — a real, observed data-loss bug. Every run now claims its **own** namespaced subdirectory under `.supergoal/`, so the planning artifacts of two runs can never collide.

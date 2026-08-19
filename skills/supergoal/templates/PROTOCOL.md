@@ -1,107 +1,161 @@
-# Supergoal execution protocol
+# Supergoal v1 execution protocol
 
-This file is read by the executing agent at the start of the single `/goal` session and followed throughout. It is the operating manual for the autonomous run.
+This file is read by the executing agent at the start of the single `/goal` session. It is the operating manual for the run, but the source of truth is `{{RUN_ROOT}}/run.json`.
 
-All paths below are rooted at this run's artifact directory (`{{RUN_ROOT}}`) — the concrete namespaced path is baked in when this file is copied at Stage 7, so two runs in the same working tree read and write entirely separate artifacts.
+All paths below are rooted at this run's artifact directory (`{{RUN_ROOT}}`). The concrete namespaced path is baked in when this file is copied at Stage 7, so two runs in the same working tree read and write separate artifacts.
 
-## The loop
+## Kernel files
 
-Repeat until `SUPERGOAL_RUN_COMPLETE` is printed:
+- `{{RUN_ROOT}}/run.json` - canonical run manifest: phases, commands, allowed paths, verification classes, deliverables, status.
+- `{{RUN_ROOT}}/events.jsonl` - append-only black box recorder.
+- `{{RUN_ROOT}}/evidence/phase-N/` - command logs, diffs, screenshots, and other proof files.
+- `{{RUN_ROOT}}/sg.py` - standard-library run kernel.
+- `{{RUN_ROOT}}/repo-state.sh` - complete-working-tree comparison helper.
+- `{{RUN_ROOT}}/report.html` - inspectable run report generated near the end of the run.
 
-1. Read `{{RUN_ROOT}}/STATE.md`. Find `Current phase: N`.
-2. Read `{{RUN_ROOT}}/phases/phase-N.md`. This is your full work spec.
-3. Print `SUPERGOAL_PHASE_START` with the spec's metadata (phase number, name, task, mandatory commands, acceptance count, evidence types, dependencies).
-4. Do the work described in the spec. Run mandatory commands. Surface evidence into the transcript (command output last ~10 lines + exit code; file listings; key diff excerpts).
-5. Print `SUPERGOAL_PHASE_VERIFY`: each acceptance criterion `pass|fail` with evidence; engineering checks (build/typecheck/lint/tests); **cleanliness checks** — run `bash {{RUN_ROOT}}/repo-state.sh added-lines <Baseline ref>` (the complete set of added/new lines since baseline, **including uncommitted and untracked work**) and grep it for stack-specific debug patterns — `console.log`/`console.error` for JS/TS; `print(`/`pprint(` for Python; `print(`/`dump(` for Swift; `fmt.Println`/`log.Println` for Go; session TODO/FIXME added this phase; dead imports added; files changed count via `bash {{RUN_ROOT}}/repo-state.sh changed-files <Baseline ref> | wc -l`; notable diff one-liners. Any non-zero cleanliness count triggers the same 3-strike treatment as a failed criterion unless the phase spec explicitly declares a `Cleanliness override:` line (e.g., a debug-tooling phase legitimately ships logs). The complete-working-tree comparison is documented once in `references/repo-state-comparison.md`.
-6. **Memory writeback check.** Anything non-obvious learned this phase? If yes, write a memory file under the detected MEM_DIR (frontmatter: `name`, `description`, `metadata.type` of `feedback`/`project`/`reference`/`user`); link it from `MEMORY.md`. Print `MEMORY_SAVED: <name>` or `MEMORY_SAVED: none`.
-7. Print `SUPERGOAL_PHASE_DONE`. Update `STATE.md`: mark phase N completed; set `Current phase: N+1`; bump `Last update` timestamp; append a one-line event.
-8. **User-interrupt check.** If a user message has arrived since the last turn, pause; address the message; ask before resuming.
-9. If N < total phases: continue with phase N+1 (back to step 1).
-10. If N == total: do **not** print `SUPERGOAL_RUN_COMPLETE` yet. Run the **Final audit** below. Only after `AUDIT_COMPLETE`, print `SUPERGOAL_RUN_COMPLETE` with a 5-line summary. The `/goal` condition is satisfied at that point.
+## Required transcript mirrors
 
-## Final audit (Stage 10 — runs after the last phase, before completion)
+The transcript is no longer the source of truth, but these blocks still make the run visible to the host and the user:
 
-Per-phase VERIFY blocks are self-reports. The audit closes that loophole by re-validating against the **original** `ROADMAP.md`, not against this run's own self-reports. The audit runs up to 3 rounds; on the 3rd round's failure, `AUDIT_HANDOFF`.
-
-### Audit steps (one round)
-
-1. Print `AUDIT_START` (round number, total phase count, criteria count, deduplicated mandatory commands to re-run).
-2. Re-read `{{RUN_ROOT}}/ROADMAP.md` and pull every phase's acceptance criteria fresh from the original plan.
-3. **Phase completeness:** scan the transcript for one `SUPERGOAL_PHASE_DONE` per phase 1..N. Any missing = an `AUDIT_GAP`.
-4. **Re-run aggregated mandatory commands** once each (build / typecheck / lint / full test suite — whatever the union of all phases' mandatory commands is, deduplicated). Surface last ~10 lines + exit code. Non-zero exit = an `AUDIT_GAP`.
-5. **Spot-check verifiable acceptance criteria** across all phases:
-   - "File X exists" / "Function Y exported" / "Config key Z set" / "No `console.log` in app code" → re-check via `ls`/`grep`/`cat`.
-   - "Screenshot showed X" / "Manual smoke test passed" / non-deterministic checks → mark `trust-prior-verify`, don't re-run.
-5b. **Deliverable check** — for each phase block in `{{RUN_ROOT}}/ROADMAP.md`, parse the `**Deliverables:**` bullets. For every bullet that names a file path or glob:
-   - Read `Baseline ref:` from `{{RUN_ROOT}}/STATE.md`.
-   - Run `bash {{RUN_ROOT}}/repo-state.sh deliverable <baseline-ref> "<path>"`. It compares the **complete working tree** (committed + staged + unstaged + deleted) against the baseline and detects untracked new files separately, printing `present — <evidence>` (exit 0) or `missing` (exit 1). An invalid/unavailable baseline degrades to a filesystem existence check. Strategy: `references/repo-state-comparison.md`.
-   - `missing` (exit 1) → `AUDIT_GAP: phase <N> deliverable "<bullet>" not present in working tree or diff`.
-   - This is repository ground truth, not transcript self-report — it catches the "agent said done but didn't ship" case the per-phase VERIFY cannot, even when the run never committed.
-6. Print `AUDIT_VERIFY` with each phase's status, each command's exit, each criterion's pass/fail/trust-prior + evidence, and a `Deliverables:` block summarizing the step-5b check (`<deliverable>: present|missing` lines).
-
-### If gaps found
-
-1. Print `AUDIT_GAPS` with the list.
-2. Write `{{RUN_ROOT}}/phases/audit-fix-<round>.md` — a focused fix spec that targets only the failing criteria. Forbid scope creep. Use the affected phases' original VERIFY as the success gate.
-3. Execute the fix spec inline (same agent, same `/goal`, same per-criterion 3-strike protocol from regular phases).
-4. On fix success: loop back to step 1 of the audit (round + 1).
-5. On 3rd round's audit failure: print `AUDIT_HANDOFF` (full gap history, suggested next move), update `STATE.md` to `BLOCKED`, stop. Do **not** print `SUPERGOAL_RUN_COMPLETE`.
-
-### If zero gaps
-
-1. Compute `audit coverage`: `re_verified / (re_verified + trust_prior)` as a percentage. `re_verified` = criteria with `pass` from step 5 + deliverables marked `present` from step 5b. `trust_prior` = criteria marked `trust-prior-verify`.
-2. Print `AUDIT_COMPLETE` (rounds, phases re-verified, commands re-run clean, criteria pass / trust-prior counts, **audit coverage %**).
-3. Print `SUPERGOAL_RUN_COMPLETE` with the 5-line summary. If `trust_prior / (re_verified + trust_prior)` > **30%**, prepend a one-line honesty banner: `⚠ Audit coverage: <re_verified> re-verified, <trust_prior> trust-prior (<pct>%). Eyeball UI/UX before merging.` Below 30%, print the same coverage line without the warning prefix.
-
-## Failure recovery (3-strike)
-
-### First failure of any acceptance criterion
-
-1. Print `FAILURE_PROBE` (phase, failed criterion, what was tried, root-cause hypothesis).
-2. Append the probe to `{{RUN_ROOT}}/STATE.md` failure log.
-3. **Auto-retry the same phase once.** Inject the probe as a "Previous attempt failed because: …" preamble. Do not advance.
-
-### Second failure (auto-retry also failed)
-
-1. Print `FAILURE_ESCALATE`.
-2. Write a focused **fix spec** at `{{RUN_ROOT}}/phases/phase-N.fix.md`. The fix spec:
-   - Targets only the failing criterion.
-   - Forbids scope creep ("do not touch unrelated files").
-   - Ends with the original phase's VERIFY block as the success gate.
-3. Execute the fix spec inline (same agent, same `/goal` — no new dispatch).
-4. On fix success: re-run the original phase's VERIFY; on pass, advance to N+1.
-5. On fix failure: proceed to third-failure handling.
-
-### Third failure (fix spec also failed)
-
-1. Print `FAILURE_HANDOFF`: failing criterion, full probe history (three attempts), suggested next move.
-2. Update `STATE.md`: `Status: BLOCKED`.
-3. Stop attempting. The user takes the wheel. The `/goal` condition will not be satisfied; surface the handoff clearly so the host evaluator and user both see it.
-
-## Mid-run interruption
-
-If the user sends any message during the run:
-- Pause at the next phase boundary (after `SUPERGOAL_PHASE_DONE`, before reading the next spec).
-- Address the message.
-- Ask whether to resume, revise the next phase spec, or stop.
-
-## Memory writeback rules
-
-See `memory_writeback_rules` section in SKILL.md. Short version:
-
-- Save anything non-obvious a future Supergoal run on a similar task would benefit from.
-- Frontmatter: `name`, `description`, `metadata.type` (feedback / project / reference / user).
-- Link from `MEMORY.md`.
-- Final phase always writes a `project_<slug>.md` memory.
-- Never save secrets, transient task details, or ephemeral state.
-
-## Required transcript blocks
-
-See `references/goal-format.md` for the exact format of:
+- `SUPERGOAL_RUN_KERNEL_READY`
 - `SUPERGOAL_PHASE_START`
 - `SUPERGOAL_PHASE_VERIFY`
+- `PHASE_GATE_VERIFY`
+- `SCOPE_DRIFT`
+- `TRUST_DEBT`
 - `MEMORY_SAVED`
 - `SUPERGOAL_PHASE_DONE`
 - `AUDIT_START` / `AUDIT_VERIFY` / `AUDIT_GAPS` / `AUDIT_COMPLETE` / `AUDIT_HANDOFF`
+- `RUN_REPORT_WRITTEN`
 - `SUPERGOAL_RUN_COMPLETE`
 - `FAILURE_PROBE` / `FAILURE_ESCALATE` / `FAILURE_HANDOFF`
+
+## Startup
+
+1. Run `python "{{RUN_ROOT}}/sg.py" validate-run "{{RUN_ROOT}}"`.
+2. Print `SUPERGOAL_RUN_KERNEL_READY` only if validation passes.
+3. If validation fails, stop and surface `PLAN_LINT_RED`. Do not execute work against an invalid v1 manifest.
+4. If `run.json` is missing but `STATE.md` exists, this is a legacy markdown-only run. Print `LEGACY_RUN_FALLBACK`, follow the old `STATE.md` / phase markdown flow, and do not pretend v1 mechanical gates exist.
+
+## Phase loop
+
+Repeat until `SUPERGOAL_RUN_COMPLETE` is printed:
+
+1. Read `{{RUN_ROOT}}/run.json`. Find the first phase whose status is `in_progress` or `pending`; blocked phases require recovery before new work.
+2. Read `{{RUN_ROOT}}/phases/phase-N.md`. This is the human work spec; `run.json` is the contract.
+3. Record the phase start:
+
+   ```bash
+   python "{{RUN_ROOT}}/sg.py" record-event "{{RUN_ROOT}}" --type phase.start --phase N --status in_progress --message "phase N started"
+   ```
+
+4. Print `SUPERGOAL_PHASE_START` with the phase metadata: id, name, allowed paths, command ids, acceptance count, trust-prior count, evidence paths, dependencies.
+5. Do the work described in the spec. Keep edits inside the phase's `allowed_paths` unless the phase spec explicitly expands scope.
+6. Save command evidence under `{{RUN_ROOT}}/evidence/phase-N/commands/<command-id>.log`. Each log must include the command, the last useful output, and an explicit `exit 0` or non-zero exit marker.
+7. Save additional evidence under `{{RUN_ROOT}}/evidence/phase-N/`:
+   - `diffs/summary.txt` for notable diff excerpts or `git diff --stat`.
+   - `screenshots/` for UI proof.
+   - Any named files listed in `required_evidence`.
+8. Print `SUPERGOAL_PHASE_VERIFY`: each criterion `pass|fail`, its verification class (`mechanical`, `human`, or `trust-prior`), and evidence file path.
+9. Run the mechanical phase gate before declaring completion:
+
+   ```bash
+   python "{{RUN_ROOT}}/sg.py" gate-phase "{{RUN_ROOT}}" N
+   ```
+
+   The gate verifies required evidence, mandatory command logs, scope drift against `allowed_paths`, and trust debt. If it prints `SCOPE_DRIFT` or exits non-zero, treat that as a failed criterion and enter the 3-strike recovery protocol.
+
+10. Memory writeback check. Anything non-obvious learned this phase? If yes, write a candidate memory file under the detected MEM_DIR with frontmatter (`name`, `description`, `metadata.type`). Link it from `MEMORY.md`. Print `MEMORY_SAVED: <name>` or `MEMORY_SAVED: none`. Final audit may promote or quarantine memory candidates; do not save secrets or transient state.
+11. Only after `gate-phase` succeeds, print `SUPERGOAL_PHASE_DONE`. Update `STATE.md` to mirror the manifest, not replace it.
+12. User-interrupt check. If a user message arrived since the last turn, pause at this boundary, address it, and ask before resuming.
+13. If phases remain, continue with the next pending phase.
+14. If all phases are complete, run the final audit. Do not print `SUPERGOAL_RUN_COMPLETE` before `AUDIT_COMPLETE`.
+
+## Final audit
+
+Per-phase VERIFY blocks are self-reports. The audit closes that loophole by using `run.json`, `ROADMAP.md`, repo-state evidence, command logs, and phase evidence.
+
+### Audit steps
+
+1. Print `AUDIT_START` with round number, total phase count, total criteria count, and deduplicated mandatory command ids.
+2. Run:
+
+   ```bash
+   python "{{RUN_ROOT}}/sg.py" audit "{{RUN_ROOT}}"
+   ```
+
+3. If the audit exits zero, print the emitted `AUDIT_COMPLETE` block, then generate the report:
+
+   ```bash
+   python "{{RUN_ROOT}}/sg.py" report "{{RUN_ROOT}}"
+   ```
+
+   Print `RUN_REPORT_WRITTEN` with the report path.
+
+4. Print `SUPERGOAL_RUN_COMPLETE` only after `AUDIT_COMPLETE` and `RUN_REPORT_WRITTEN`.
+5. If trust-prior criteria exceed 30% of total criteria, include a one-line honesty banner before the final summary:
+
+   ```text
+   Audit coverage warning: <trust_prior>/<total> criteria were trust-prior. Human review required before merge.
+   ```
+
+### If gaps are found
+
+1. Print `AUDIT_GAPS` with the exact gaps from `sg.py audit`.
+2. Write `{{RUN_ROOT}}/phases/audit-fix-<round>.md`, a focused fix spec targeting only the failing criteria or missing deliverables.
+3. Record the failure:
+
+   ```bash
+   python "{{RUN_ROOT}}/sg.py" record-event "{{RUN_ROOT}}" --type audit.gap --status fail --message "<short gap summary>"
+   ```
+
+4. Execute the fix spec inline, then rerun the audit.
+5. After 3 failed audit rounds, print `AUDIT_HANDOFF`, update `run.json` and `STATE.md` to `BLOCKED`, run `python "{{RUN_ROOT}}/sg.py" report "{{RUN_ROOT}}"`, and stop. Do not print `SUPERGOAL_RUN_COMPLETE`.
+
+## Failure recovery
+
+### First failure of any criterion or gate
+
+1. Print `FAILURE_PROBE` with phase, failed criterion/gate, attempted evidence, and root-cause hypothesis.
+2. Record the event:
+
+   ```bash
+   python "{{RUN_ROOT}}/sg.py" record-event "{{RUN_ROOT}}" --type failure.probe --phase N --status fail --message "<short summary>"
+   ```
+
+3. Append the probe to `{{RUN_ROOT}}/STATE.md` failure log.
+4. Auto-retry the same phase once. Do not advance.
+
+### Second failure
+
+1. Print `FAILURE_ESCALATE`.
+2. Write `{{RUN_ROOT}}/phases/phase-N.fix.md`, targeting only the failing criterion or gate.
+3. Execute the fix spec inline.
+4. Re-run `python "{{RUN_ROOT}}/sg.py" gate-phase "{{RUN_ROOT}}" N`.
+5. On pass, continue. On fail, proceed to third-failure handling.
+
+### Third failure
+
+1. Print `FAILURE_HANDOFF` with full probe history and suggested next move.
+2. Record the blocked event.
+3. Update `run.json` and `STATE.md` to `BLOCKED`.
+4. Run `python "{{RUN_ROOT}}/sg.py" report "{{RUN_ROOT}}"`.
+5. Stop. The `/goal` condition is not satisfied.
+
+## Resume
+
+When resuming a run, start with:
+
+```bash
+python "{{RUN_ROOT}}/sg.py" resume "{{RUN_ROOT}}"
+```
+
+Follow the reported next action exactly. Do not re-plan a v1 run unless the user explicitly asks for a new plan.
+
+## Memory writeback rules
+
+See `memory_writeback_rules` in `SKILL.md`. Short version:
+
+- Save only durable, non-obvious learnings a future Supergoal run would benefit from.
+- Prefer candidate memories during phase work; promote durable memories after final audit.
+- Never save secrets, transient task details, or ephemeral state.

@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "run": {
+    "id": "audit-gap-fixed",
+    "title": "Audit Gap Fixed Fixture",
+    "task": "Show a run that repaired an audit gap",
+    "status": "COMPLETE",
+    "current_phase": 2,
+    "run_root": "tests/fixtures/runs/audit-gap-fixed",
+    "baseline_ref": "fixture-baseline",
+    "host": "fixture",
+    "legacy": false,
+    "created_at": "2026-06-07T00:00:00+00:00",
+    "last_update": "2026-06-07T00:18:00+00:00"
+  },
+  "commands": [
+    {"id": "test", "class": "test", "command": "npm test", "required": true}
+  ],
+  "phases": [
+    {
+      "id": 1,
+      "name": "Build Feature",
+      "status": "complete",
+      "allowed_paths": ["src/feature/", "tests/feature/"],
+      "depends_on": [],
+      "criteria": [
+        {"id": "p1-c1", "text": "Missing edge case test was added", "verification": "mechanical", "evidence": ["commands/test.log"]}
+      ],
+      "commands": ["test"],
+      "deliverables": ["tests/feature/edge.test.ts"],
+      "required_evidence": ["commands/test.log", "diffs/summary.txt"]
+    },
+    {
+      "id": 2,
+      "name": "Polish & Harden",
+      "status": "complete",
+      "allowed_paths": ["*"],
+      "depends_on": [1],
+      "criteria": [
+        {"id": "p2-c1", "text": "Audit fix reran cleanly", "verification": "mechanical", "evidence": []}
+      ],
+      "commands": [],
+      "deliverables": [],
+      "required_evidence": []
+    }
+  ]
+}

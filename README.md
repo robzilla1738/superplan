@@ -1,8 +1,8 @@
 # Supergoal
 
-Plan deeply, then autonomously build until it's done.
+Plan deeply, then autonomously build until the run contract is satisfied.
 
-`/supergoal <what you want>` recons your codebase, applies your saved preferences from memory, decomposes the work into the right number of phases for the task, gets one confirmation from you, then prints a **single ready-to-paste `/goal` command**. Paste it once and the rest is autonomous: every phase runs sequentially with built-in retry, fix-spec recovery, and per-phase memory writeback until `SUPERGOAL_RUN_COMPLETE`.
+`/supergoal <what you want>` recons your codebase, applies saved preferences from memory, decomposes the work into the right number of phases, writes a structured `run.json` contract, gets one confirmation from you, then prints a **single ready-to-paste `/goal` command**. Paste it once and the rest is autonomous: every phase runs sequentially with event telemetry, evidence files, mechanical phase gates, retry, fix-spec recovery, memory writeback, final audit, and a local `report.html` until `SUPERGOAL_RUN_COMPLETE`.
 
 ## How it works (at a glance)
 
@@ -16,25 +16,25 @@ flowchart TD
     Q2 --> S2
     S2 --> S3["Stage 3<br/>Risks + best practices"]
     S3 --> S4["Stage 4<br/>Decompose into N phases<br/>(adaptive — no fixed count)"]
-    S4 --> S5["Stage 5<br/>Write ROADMAP, STATE,<br/>phase-N.md specs to disk"]
-    S5 --> S6{"Stage 6<br/>Self-critique +<br/>plan review +<br/>revision menu"}
+    S4 --> S5["Stage 5<br/>Compile run.json<br/>render markdown specs<br/>create evidence vault"]
+    S5 --> S6{"Stage 6<br/>Kernel validation +<br/>self-critique +<br/>plan review"}
     S6 -->|Revise| S4
     S6 -->|Start now| S65{"Stage 6.5<br/>Pre-flight<br/>smoke check"}
     S65 -->|Green| S7["Stage 7<br/>Print ready-to-paste /goal"]
     S65 -->|Red| S6
     S7 --> PASTE(["You paste /goal — once"])
-    PASTE --> LOOP["Autonomous loop per phase:<br/>read spec → do work →<br/>SUPERGOAL_PHASE_VERIFY<br/>(includes cleanliness grep) →<br/>write memory → SUPERGOAL_PHASE_DONE"]
+    PASTE --> LOOP["Autonomous loop per phase:<br/>read run.json + spec → do work →<br/>save evidence → gate phase →<br/>write memory → SUPERGOAL_PHASE_DONE"]
     LOOP --> CHECK{Failure?}
     CHECK -->|None| NEXT{More phases?}
     NEXT -->|Yes| LOOP
-    NEXT -->|No| AUDIT["FINAL AUDIT<br/>re-verify against ROADMAP<br/>re-run mandatory commands<br/>spot-check criteria<br/>+ check deliverables vs Baseline ref<br/>(full working tree)"]
+    NEXT -->|No| AUDIT["FINAL AUDIT<br/>validate run.json<br/>check command logs<br/>check evidence + deliverables<br/>write report.html"]
     CHECK -->|1st| R1["Auto-retry<br/>with probe injected"]
     R1 --> LOOP
     CHECK -->|2nd| R2["Write fix-spec,<br/>execute inline"]
     R2 --> LOOP
     CHECK -->|3rd| HANDOFF(["STOP — handoff with<br/>full probe history"])
     AUDIT --> AGAPS{Gaps?}
-    AGAPS -->|None| DONE(["AUDIT_COMPLETE ✓<br/>+ coverage %<br/>SUPERGOAL_RUN_COMPLETE ✓"])
+    AGAPS -->|None| DONE(["AUDIT_COMPLETE ✓<br/>RUN_REPORT_WRITTEN ✓<br/>SUPERGOAL_RUN_COMPLETE ✓"])
     AGAPS -->|Round 1 or 2| AFIX["Write audit-fix-N.md,<br/>execute inline"]
     AFIX --> AUDIT
     AGAPS -->|Round 3| AHO(["STOP — AUDIT_HANDOFF<br/>persistent gaps"])
@@ -142,11 +142,27 @@ What happens:
 3. **Stage 2 — Recon.** Parallel codebase/environment scan.
 4. **Stage 3 — Deep think.** Identifies top-3 risks + dependencies. Uses Context7/WebSearch if available (optional, not required).
 5. **Stage 4 — Decompose.** Phase count derived from the task — no fixed cap. Small change = 2 phases; full-stack greenfield = 8–12+.
-6. **Stage 5 — Write specs.** `ROADMAP.md` + `STATE.md` + one `phase-N.md` work spec per phase, all under the run's namespaced `.supergoal/<run-id>/` dir.
-7. **Stage 6 — Self-critique + plan review.** Before showing the summary, the planner runs **one** self-critique pass that flags vague criteria, mis-sliced phases, and weak dependencies — rewriting falsifiability issues in place so the user sees the post-critique version. Then it shows the plan with assumptions, risks, applied memories, and a concrete revision menu: **Start now / Adjust assumption / Tweak a phase / Restructure phases.**
+6. **Stage 5 — Compile the run contract.** `run.json` is written first, then `ROADMAP.md`, `STATE.md`, one `phase-N.md` work spec per phase, and the `evidence/` vault are rendered under the run's namespaced `.supergoal/<run-id>/` dir.
+7. **Stage 6 — Kernel validation + self-critique + plan review.** The planner runs `sg.py validate-run`, then one self-critique pass that flags vague criteria, mis-sliced phases, weak dependencies, missing allowed paths, and excess trust debt. It shows the plan with assumptions, risks, applied memories, trust debt, artifacts, and a concrete revision menu: **Start now / Adjust assumption / Tweak a phase / Restructure phases.**
 8. **Stage 6.5 — Pre-flight smoke check.** Before the `/goal` line is printed, the planner runs the deduplicated mandatory commands once. `PREFLIGHT_GREEN` → proceed to Stage 7. `PREFLIGHT_RED` → re-show Stage 6 with a "Skip pre-flight, dispatch anyway" option (for cases where the baseline being broken is exactly what phase 1 will fix). Catches "we'd thrash 3-strike loops against a broken baseline" before it happens.
-9. **Stage 7 — Hand off.** Captures `Baseline ref:` (the current `HEAD` sha) into `STATE.md` so the final audit can diff deliverables against the working tree. Prints a ready-to-paste `/goal` line. You paste it once; the chain runs phases sequentially with 3-strike auto-retry → fix-spec → handoff, writing a memory at each phase boundary so future runs start smarter. Each `SUPERGOAL_PHASE_VERIFY` also includes a **cleanliness pass** — grep-based counts for debug prints, session TODOs, and dead imports added across this phase's **complete working-tree changes** (committed + staged + unstaged + untracked, via `repo-state.sh`), so uncommitted debug output is caught too (non-zero counts triggering 3-strike unless the spec sets `Cleanliness override:`).
-10. **Final audit (after the last phase, before `SUPERGOAL_RUN_COMPLETE`).** Re-reads the original ROADMAP, re-runs the deduplicated mandatory commands (build / typecheck / lint / tests) once at the end to catch cross-phase regressions a per-phase VERIFY can miss, spot-checks every acceptance criterion, and **checks every declared deliverable against `Baseline ref` across the complete working tree** (committed, staged, unstaged, deleted, and untracked — not just commits) so an "agent said done but didn't ship" case becomes a gap even when the run never committed. On gaps it writes `audit-fix-<round>.md` and self-heals inline; up to 3 audit rounds before stopping. Only after `AUDIT_COMPLETE` does it print `SUPERGOAL_RUN_COMPLETE` — with an honest **audit coverage** line. If more than 30% of checks were `trust-prior-verify` (subjective UI/UX criteria the audit can't re-run), `SUPERGOAL_RUN_COMPLETE` prepends a warning banner asking the user to eyeball before merging.
+9. **Stage 7 — Hand off.** Captures `Baseline ref` (the current `HEAD` sha) into `run.json` and `STATE.md`, copies `sg.py`, `repo-state.sh`, and `PROTOCOL.md` into the run namespace, validates the manifest, then prints a ready-to-paste `/goal` line. You paste it once; the chain runs phases sequentially with 3-strike auto-retry -> fix-spec -> handoff, writing a memory at each phase boundary so future runs start smarter.
+10. **Phase gates + final audit.** Each phase saves command logs and required proof under `evidence/phase-N/`, prints `SUPERGOAL_PHASE_VERIFY`, and must pass `python <run-root>/sg.py gate-phase <run-root> N` before `SUPERGOAL_PHASE_DONE`. The final audit runs `sg.py audit`, checks completed phases, mandatory command logs, required deliverables through `repo-state.sh`, and trust debt. It then writes `report.html` with `sg.py report`. Only after `AUDIT_COMPLETE` and `RUN_REPORT_WRITTEN` does it print `SUPERGOAL_RUN_COMPLETE`.
+
+## What v1 mechanically verifies
+
+- `run.json` schema, phase ids, dependencies, command ids, final Polish & Harden phase, and valid verification classes.
+- Required evidence files exist before a phase can finish.
+- Mandatory command logs exist and include an explicit `exit 0`.
+- Scope drift: changed files are checked against each phase's `allowed_paths`.
+- Deliverables are checked against the complete working tree versus the baseline via `repo-state.sh`.
+- Trust debt is reported as the share of criteria marked `trust-prior`.
+
+## What still requires human judgment
+
+- Subjective UI taste, copy quality, and "looks polished" claims.
+- Screenshots/manual smoke tests that cannot be deterministically re-run by the kernel.
+- Whether a phase's `allowed_paths` were too broad.
+- Whether the plan itself was ambitious enough for the user's actual product goal.
 
 ## Self-healing failure recovery
 
@@ -171,15 +187,24 @@ Each run gets its **own** namespaced subdirectory under `.supergoal/` (e.g. `.su
 ```
 .supergoal/
 └── <task-slug>-<id>/         one isolated dir per run
+    ├── run.json              canonical v1 manifest
+    ├── events.jsonl          append-only black box recorder
     ├── ROADMAP.md            full plan
-    ├── STATE.md              live progress (incl. Run root + Baseline ref), updated per phase
+    ├── STATE.md              human-readable progress mirror
     ├── THINKING.md           risks, dependencies, applied memories, best practices
     ├── PROTOCOL.md           execution loop + failure recovery (copied at dispatch)
+    ├── sg.py                 v1 run kernel (copied at dispatch)
     ├── repo-state.sh         complete working-tree-vs-baseline helper (copied at dispatch)
+    ├── report.html           inspectable run report
     ├── context.md            recon output
     ├── repo-map.md           brownfield only
     ├── applied-memories.md   memory hits that informed the plan
     ├── tools.md              detected MCPs / skills / hosts
+    ├── evidence/
+    │   └── phase-N/
+    │       ├── commands/
+    │       ├── diffs/
+    │       └── screenshots/
     └── phases/
         ├── phase-1.md
         ├── phase-2.md
@@ -204,13 +229,14 @@ skills/supergoal/
 │   ├── detect-env.sh          greenfield env recon
 │   ├── detect-stack.sh        brownfield stack recon
 │   ├── summarize-repo.sh      repo map
-│   ├── repo-state.sh          complete working-tree-vs-baseline comparison (audit + cleanliness)
+│   ├── sg.py                  v1 run kernel: validate, gate, audit, resume, report
+│   ├── repo-state.sh          complete working-tree-vs-baseline comparison (audit + deliverables)
 │   └── validate-phase.sh      checks phase spec structure
 └── templates/
     ├── ROADMAP.md
     ├── STATE.md
-    ├── phase-goal.txt         phase spec skeleton
-    └── PROTOCOL.md            execution loop + failure recovery
+    ├── phase-goal.txt         phase spec skeleton with gate/evidence contract
+    └── PROTOCOL.md            v1 execution loop + failure recovery + audit/report
 ```
 
 ## Requirements
@@ -220,7 +246,7 @@ skills/supergoal/
 
 ## Version
 
-Current: **v0.7.0**. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+Current: **v1.0.0**. See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 Marketplace consumers can pin a specific version via the `/plugin` UI. Auto-updates are off by default for third-party marketplaces — enable per-marketplace via `/plugin` → **Marketplaces** if you want them.
 

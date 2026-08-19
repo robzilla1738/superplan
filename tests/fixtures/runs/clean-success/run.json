@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "run": {
+    "id": "clean-success",
+    "title": "Clean Success Fixture",
+    "task": "Ship a small scoped change",
+    "status": "COMPLETE",
+    "current_phase": 2,
+    "run_root": "tests/fixtures/runs/clean-success",
+    "baseline_ref": "fixture-baseline",
+    "host": "fixture",
+    "legacy": false,
+    "created_at": "2026-06-07T00:00:00+00:00",
+    "last_update": "2026-06-07T00:10:00+00:00"
+  },
+  "commands": [
+    {"id": "test", "class": "test", "command": "npm test", "required": true}
+  ],
+  "phases": [
+    {
+      "id": 1,
+      "name": "Build Feature",
+      "status": "complete",
+      "allowed_paths": ["src/feature/", "tests/feature/"],
+      "depends_on": [],
+      "criteria": [
+        {"id": "p1-c1", "text": "Feature test passes", "verification": "mechanical", "evidence": ["commands/test.log"]}
+      ],
+      "commands": ["test"],
+      "deliverables": ["src/feature/index.ts"],
+      "required_evidence": ["commands/test.log", "diffs/summary.txt"]
+    },
+    {
+      "id": 2,
+      "name": "Polish & Harden",
+      "status": "complete",
+      "allowed_paths": ["*"],
+      "depends_on": [1],
+      "criteria": [
+        {"id": "p2-c1", "text": "Final audit passes", "verification": "mechanical", "evidence": []}
+      ],
+      "commands": [],
+      "deliverables": [],
+      "required_evidence": []
+    }
+  ]
+}

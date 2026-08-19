@@ -53,6 +53,7 @@ Each phase's acceptance criteria should be:
 - **Atomic** — one fact per criterion
 - **Falsifiable** — you can say yes or no, not "kind of"
 - **Tied to commands or evidence** — `npm test` output, a file existing, a screenshot diff
+- **Classified** — every criterion in `run.json` must be `mechanical`, `human`, or `trust-prior`
 
 Bad: "User authentication works."
 Good:
@@ -62,6 +63,16 @@ Good:
 - `/api/auth/signin` returns 200 for valid credentials and 401 for invalid
 - `<SignInForm/>` renders without console errors
 - Authenticated middleware rejects requests without a session cookie
+
+## v1 phase contract fields
+
+Each phase is both markdown and a `run.json` object. The JSON object is canonical.
+
+- **`allowed_paths`** - exact path prefixes or globs the phase may edit. The phase gate prints `SCOPE_DRIFT` if the working tree changed outside this scope.
+- **`criteria[].verification`** - `mechanical`, `human`, or `trust-prior`. Prefer mechanical. Human and trust-prior count as trust debt in the report.
+- **`commands`** - command ids from the run-level registry, not freehand shell lines. Logs go to `evidence/phase-N/commands/<id>.log`.
+- **`deliverables`** - files/globs/features the audit can check with `repo-state.sh deliverable` when path-like.
+- **`required_evidence`** - files under `evidence/phase-N/` that must exist before the phase gate passes.
 
 ## Cleanliness (grep-checked at VERIFY)
 
@@ -96,14 +107,16 @@ If a command produces too much output to surface, require a **summary line** ("T
 
 ## Evidence required
 
-For each phase, list what the agent must print into the conversation to prove completion. The evaluator only sees the transcript. Common evidence types:
+For each phase, list what the agent must save under `evidence/phase-N/` and summarize in the conversation. Common evidence types:
 
+- **Command logs** — full output in `commands/<id>.log`, with an explicit `exit 0` marker
 - **Command output excerpts** — last 10 lines of the test run, build summary
 - **File listings** — `ls -la` of the new files created, with sizes
 - **Diff snippets** — key changes inline, not full diffs
 - **Screenshots** — for UI phases, paths to screenshots saved during execution
 - **API responses** — `curl -X POST ... | jq` outputs for new endpoints
 - **STATE.md update** — the new content of the phase's row
+- **Gate output** — `PHASE_GATE_VERIFY`, `SCOPE_DRIFT` when present, and `TRUST_DEBT`
 
 ## Dependencies
 

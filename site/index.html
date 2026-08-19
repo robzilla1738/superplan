@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Supergoal - Agent OS for autonomous coding runs</title>
+    <meta
+      name="description"
+      content="Supergoal turns vague software requests into structured, gated, auditable /goal runs with run.json, evidence files, telemetry, and reports."
+    >
+    <meta name="theme-color" content="#111827">
+    <meta property="og:title" content="Supergoal">
+    <meta property="og:description" content="Plan deeply, paste one /goal, and let the agent run through structured phase gates to an auditable report.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <a class="brand" href="#top" aria-label="Supergoal home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M8 14.2 12.5 3h6L14 14.2h5L8.5 22l2.2-7.8H8Z"></path>
+          </svg>
+        </span>
+        <span>Supergoal</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary navigation">
+        <a href="#workflow">Workflow</a>
+        <a href="#kernel">Run Kernel</a>
+        <a href="#deck">Deck</a>
+        <a href="#report">Report</a>
+        <a href="#install">Install</a>
+        <a href="#files">Files</a>
+      </nav>
+      <a class="header-action" href="https://github.com/robzilla1738/supergoal" rel="noreferrer">GitHub</a>
+    </header>
+
+    <main id="main">
+      <section class="hero section-shell" id="top">
+        <div class="hero-copy">
+          <h1>Supergoal</h1>
+          <p class="hero-lede">
+            An agent operating system for coding runs: turn a rough request into a structured <code>run.json</code>,
+            evidence-backed phases, one ready-to-paste <code>/goal</code>, mechanical gates, and a report an engineer can inspect.
+          </p>
+          <div class="hero-actions" aria-label="Hero actions">
+            <a class="button primary" href="#install">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"></path>
+              </svg>
+              Install
+            </a>
+            <a class="button secondary" href="#kernel">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 5h14v14H5zM9 9h6M9 13h6M9 17h3"></path>
+              </svg>
+              See the kernel
+            </a>
+          </div>
+          <dl class="hero-facts" aria-label="Project facts">
+            <div>
+              <dt>Current</dt>
+              <dd>v1.0.0</dd>
+            </div>
+            <div>
+              <dt>Runs on</dt>
+              <dd>Claude Code + Codex</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd>Run kernel ready</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="hero-visual" aria-label="Supergoal terminal preview">
+          <div class="terminal-window">
+            <div class="terminal-bar">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <pre><code><span class="muted">$</span> /supergoal redesign billing settings
+
+Stage 0  memory + tools loaded
+Stage 2  repo recon completed
+Stage 4  sliced into 5 phases
+Stage 5  compiled run.json
+Stage 6  kernel validated
+
+PREFLIGHT_GREEN
+
+/goal "Execute .supergoal/billing-settings-H7x3 until AUDIT_COMPLETE, RUN_REPORT_WRITTEN, and SUPERGOAL_RUN_COMPLETE."</code></pre>
+          </div>
+          <div class="status-strip" aria-label="Run state preview">
+            <div>
+              <strong>Phase gate</strong>
+              <span>Evidence, commands, scope drift</span>
+            </div>
+            <div>
+              <strong>Telemetry</strong>
+              <span>Events, command logs, proof files</span>
+            </div>
+            <div>
+              <strong>Report</strong>
+              <span>Trust debt and run history</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-shell intro-section" aria-labelledby="what-title">
+        <div class="section-kicker">What it is</div>
+        <div class="intro-grid">
+          <div>
+            <h2 id="what-title">A small runtime for work agents usually only promise.</h2>
+          </div>
+          <div class="intro-copy">
+            <p>
+              Supergoal is not a framework, server, or UI library. It is a skill package that gives Claude Code and
+              Codex a disciplined run kernel for non-trivial software work: a manifest, scoped phases, command evidence,
+              failure events, mechanical gates, and a final audit.
+            </p>
+            <p>
+              The key move is simple: <code>/goal</code> carries the short end-state, while the real contract lives on disk.
+              The executor keeps returning to <code>run.json</code>, phase specs, evidence files, and the protocol instead of trusting chat memory.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="kernel section-shell" id="kernel" aria-labelledby="kernel-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Run Kernel</div>
+            <h2 id="kernel-title">The source of truth is no longer a transcript.</h2>
+          </div>
+          <p>
+            v1 gives every run a small operating system: manifest, event stream, evidence vault, gates, audit, and report.
+          </p>
+        </div>
+        <div class="kernel-grid">
+          <article>
+            <span>01</span>
+            <h3><code>run.json</code></h3>
+            <p>Canonical state for phases, command ids, allowed paths, criteria classes, deliverables, and status.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3><code>events.jsonl</code></h3>
+            <p>Append-only black box recorder for starts, gates, failures, audits, and report generation.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3><code>evidence/</code></h3>
+            <p>Command logs, diffs, screenshots, and proof files the phase gate can inspect.</p>
+          </article>
+          <article>
+            <span>04</span>
+            <h3><code>sg.py</code></h3>
+            <p>Standard-library kernel for validation, event recording, phase gates, audit, resume, and reports.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="deck section-shell" id="deck" aria-labelledby="deck-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Presentation Mode</div>
+            <h2 id="deck-title">The v1 run behaves like an operating system.</h2>
+          </div>
+          <p>
+            Each layer removes one class of agent failure: vague plans, invisible work, unbounded edits, weak recovery, and unverifiable completion.
+          </p>
+        </div>
+        <div class="deck-stage" data-deck>
+          <div class="deck-rail" aria-hidden="true">
+            <span class="is-active"></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <article class="deck-slide is-active">
+            <div class="slide-index">01</div>
+            <div>
+              <h3>Manifest before motion</h3>
+              <p>The planner writes <code>run.json</code> before any execution. Phases, dependencies, allowed paths, command ids, deliverables, and trust debt become a contract, not a suggestion.</p>
+            </div>
+            <pre><code>{
+  "schema_version": "1.0",
+  "phase": {
+    "id": 1,
+    "allowed_paths": ["src/auth/"],
+    "commands": ["test"]
+  }
+}</code></pre>
+          </article>
+          <article class="deck-slide">
+            <div class="slide-index">02</div>
+            <div>
+              <h3>Evidence becomes filesystem state</h3>
+              <p>Command output, diff summaries, screenshots, and audit notes live in <code>evidence/phase-N/</code>. The transcript can summarize proof; the run keeps the proof.</p>
+            </div>
+            <pre><code>evidence/
+`-- phase-3/
+    |-- commands/test.log
+    |-- diffs/summary.txt
+    `-- screenshots/mobile.png</code></pre>
+          </article>
+          <article class="deck-slide">
+            <div class="slide-index">03</div>
+            <div>
+              <h3>Gates make success expensive to fake</h3>
+              <p><code>sg.py gate-phase</code> checks required evidence, command exit markers, changed files, and trust debt before <code>SUPERGOAL_PHASE_DONE</code>.</p>
+            </div>
+            <pre><code>PHASE_GATE_VERIFY pass
+TRUST_DEBT phase 3: 1/8 trust-prior (12%)
+SCOPE_DRIFT: none</code></pre>
+          </article>
+          <article class="deck-slide">
+            <div class="slide-index">04</div>
+            <div>
+              <h3>Recovery becomes replayable</h3>
+              <p>Failures write events. Resume does not ask the next agent to infer where the run died; it prints the exact next phase, gap, or blocked reason.</p>
+            </div>
+            <pre><code>{"type":"failure.probe","phase":2,"status":"fail"}
+{"type":"audit.fail","data":{"gaps":["missing deliverable"]}}</code></pre>
+          </article>
+          <article class="deck-slide">
+            <div class="slide-index">05</div>
+            <div>
+              <h3>The report is the product surface</h3>
+              <p><code>report.html</code> turns a long autonomous session into a review artifact: phase status, event history, evidence counts, and the boundary between mechanical proof and human judgment.</p>
+            </div>
+            <pre><code>AUDIT_COMPLETE
+RUN_REPORT_WRITTEN .supergoal/run/report.html
+SUPERGOAL_RUN_COMPLETE</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="workflow section-shell" id="workflow" aria-labelledby="workflow-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Workflow</div>
+            <h2 id="workflow-title">From vague task to audited completion.</h2>
+          </div>
+          <p>
+            Supergoal makes the planning explicit before execution starts, then keeps execution bound to a structured run contract.
+          </p>
+        </div>
+        <div class="flow-layout">
+          <div class="flow-diagram execution-map" role="img" aria-label="Workflow diagram showing Supergoal planning, run kernel compilation, one goal handoff, gated execution, recovery, audit, and report output.">
+            <div class="map-lane">
+              <div class="lane-label">Plan</div>
+              <article class="map-node map-input">
+                <span>/supergoal</span>
+                <strong>Intake</strong>
+                <p>Memory, tools, repo state, risks.</p>
+              </article>
+              <div class="map-arrow" aria-hidden="true"></div>
+              <article class="map-node map-kernel">
+                <span>run kernel</span>
+                <strong>Compiled contract</strong>
+                <p><code>run.json</code>, events, evidence vault.</p>
+              </article>
+            </div>
+            <div class="map-lane">
+              <div class="lane-label">Execute</div>
+              <article class="map-node map-goal">
+                <span>/goal</span>
+                <strong>Paste once</strong>
+                <p>Executor resumes from disk, not chat memory.</p>
+              </article>
+              <div class="map-arrow" aria-hidden="true"></div>
+              <article class="map-node map-phase">
+                <span>phase loop</span>
+                <strong>Gate every phase</strong>
+                <p>Commands, scope, evidence, trust debt.</p>
+              </article>
+            </div>
+            <div class="map-lane">
+              <div class="lane-label">Recover</div>
+              <article class="map-node map-recovery">
+                <span>recovery</span>
+                <strong>Failures become state</strong>
+                <p>Retry, fix spec, or blocked handoff.</p>
+              </article>
+              <div class="map-arrow" aria-hidden="true"></div>
+              <article class="map-node map-report">
+                <span>audit</span>
+                <strong>Report the proof</strong>
+                <p><code>report.html</code> exposes what passed and what still needs judgment.</p>
+              </article>
+            </div>
+          </div>
+          <ol class="flow-steps" data-flow-steps>
+            <li>
+              <span>01</span>
+              <div>
+                <h3>Load context</h3>
+                <p>Detect memory, tools, repo state, active runs, and whether the work is greenfield or brownfield.</p>
+              </div>
+            </li>
+            <li>
+              <span>02</span>
+              <div>
+                <h3>Recon before promises</h3>
+                <p>Scan the codebase and environment so the plan reflects the project instead of guessing from the prompt.</p>
+              </div>
+            </li>
+            <li>
+              <span>03</span>
+              <div>
+                <h3>Compile the run</h3>
+                <p>Create <code>run.json</code>, markdown mirrors, phase specs, and the evidence vault.</p>
+              </div>
+            </li>
+            <li>
+              <span>04</span>
+              <div>
+                <h3>Paste once</h3>
+                <p>Supergoal prints one <code>/goal</code> line. Slash commands remain user-triggered, so the handoff is honest.</p>
+              </div>
+            </li>
+            <li>
+              <span>05</span>
+              <div>
+                <h3>Gate with proof</h3>
+                <p>Every phase must pass evidence, command, scope, and trust-debt checks before done.</p>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="protocol section-shell" id="protocol" aria-labelledby="protocol-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Protocol</div>
+            <h2 id="protocol-title">Built for the failure modes that usually derail agents.</h2>
+          </div>
+          <p>
+            The protocol is intentionally blunt: phases must be measurable, evidence must exist on disk, and the final audit
+            checks the working tree rather than trusting the conversation.
+          </p>
+        </div>
+        <div class="protocol-grid">
+          <article class="protocol-panel">
+            <div class="panel-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12a7 7 0 0 1 12-5m2 5a7 7 0 0 1-12 5M17 3v4h-4M7 21v-4h4"></path>
+              </svg>
+            </div>
+            <h3>Evidence gate</h3>
+            <p>Required files and command logs must exist before a phase can print <code>SUPERGOAL_PHASE_DONE</code>.</p>
+          </article>
+          <article class="protocol-panel">
+            <div class="panel-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 13l4 4L19 7M5 5h14v14H5z"></path>
+              </svg>
+            </div>
+            <h3>Scope firewall</h3>
+            <p>Changed files are checked against each phase's <code>allowed_paths</code>; drift prints <code>SCOPE_DRIFT</code>.</p>
+          </article>
+          <article class="protocol-panel">
+            <div class="panel-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 4h12v16H6zM9 8h6M9 12h6M9 16h4"></path>
+              </svg>
+            </div>
+            <h3>Trust debt</h3>
+            <p>Criteria are labeled <code>mechanical</code>, <code>human</code>, or <code>trust-prior</code>; weak proof is visible.</p>
+          </article>
+          <article class="protocol-panel accent">
+            <div class="panel-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 19h16M6 17V7l6-3 6 3v10M9 11h6M9 15h6"></path>
+              </svg>
+            </div>
+            <h3>Final report</h3>
+            <p>After audit, Supergoal writes <code>report.html</code> with phases, events, evidence counts, and trust debt.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="compare section-shell" aria-labelledby="compare-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Why it matters</div>
+            <h2 id="compare-title">Less babysitting, fewer fake finishes.</h2>
+          </div>
+        </div>
+        <div class="compare-grid">
+          <div class="compare-column muted-column">
+            <h3>Ordinary agent planning</h3>
+            <ul>
+              <li>Plan lives only in chat or loose markdown.</li>
+              <li>User must keep prompting each phase.</li>
+              <li>Failure recovery depends on ad hoc follow-up.</li>
+              <li>"Done" can mean tests passed, not that deliverables shipped.</li>
+            </ul>
+          </div>
+          <div class="compare-column strong-column">
+            <h3>With Supergoal</h3>
+            <ul>
+              <li><code>run.json</code>, state, protocol, evidence, and phase specs live on disk.</li>
+              <li>One pasted <code>/goal</code> drives the whole run.</li>
+              <li>Phase gates stop missing evidence and out-of-scope edits.</li>
+              <li><code>AUDIT_COMPLETE</code> and <code>RUN_REPORT_WRITTEN</code> must appear before completion.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="report section-shell" id="report" aria-labelledby="report-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Report Surface</div>
+            <h2 id="report-title">Every run leaves an artifact you can inspect.</h2>
+          </div>
+          <p>
+            The report is generated under the run root, not hosted externally. It turns a long agent session into a reviewable state summary.
+          </p>
+        </div>
+        <div class="report-layout">
+          <div class="report-card" aria-label="Run report mockup">
+            <div class="report-topline">
+              <span>Supergoal v1 run report</span>
+              <strong>COMPLETE</strong>
+            </div>
+            <h3>Billing Settings Redesign</h3>
+            <div class="report-metrics">
+              <div><strong>5</strong><span>phases</span></div>
+              <div><strong>19</strong><span>events</span></div>
+              <div><strong>2/17</strong><span>trust-prior</span></div>
+              <div><strong>41</strong><span>evidence files</span></div>
+            </div>
+            <table>
+              <thead>
+                <tr><th>Phase</th><th>Status</th><th>Gate</th><th>Evidence</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Foundation</td><td>complete</td><td>pass</td><td>9 files</td></tr>
+                <tr><td>States & edges</td><td>complete</td><td>pass</td><td>12 files</td></tr>
+                <tr><td>Polish & Harden</td><td>complete</td><td>pass</td><td>8 files</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="proof-columns">
+            <article>
+              <h3>Mechanically verified</h3>
+              <ul>
+                <li>Manifest validity and dependency graph.</li>
+                <li>Required evidence files.</li>
+                <li>Command logs with explicit <code>exit 0</code>.</li>
+                <li>Changed files inside <code>allowed_paths</code>.</li>
+                <li>Deliverables present in the working tree.</li>
+              </ul>
+            </article>
+            <article>
+              <h3>Human judgment</h3>
+              <ul>
+                <li>Subjective UI taste and copy quality.</li>
+                <li>Screenshot interpretation.</li>
+                <li>Whether scope was broad enough.</li>
+                <li>Whether the plan aimed at the right product outcome.</li>
+                <li>Anything labeled <code>trust-prior</code>.</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="gallery section-shell" aria-labelledby="gallery-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Example Gallery</div>
+            <h2 id="gallery-title">Four run states worth showing, not hiding.</h2>
+          </div>
+          <p>
+            Supergoal should make clean success obvious, but it should make imperfect runs even more inspectable.
+          </p>
+        </div>
+        <div class="gallery-grid">
+          <article>
+            <span>Success</span>
+            <h3>All gates passed</h3>
+            <p>Every phase has evidence, commands exited cleanly, audit found no gaps, report was written.</p>
+            <code>AUDIT_COMPLETE</code>
+          </article>
+          <article>
+            <span>Audit fixed</span>
+            <h3>Gap found, then repaired</h3>
+            <p>Audit identified a missing deliverable, wrote a focused fix spec, reran, and completed cleanly.</p>
+            <code>audit.fail -> audit.pass</code>
+          </article>
+          <article>
+            <span>Blocked</span>
+            <h3>Recovery exhausted</h3>
+            <p>The run stops with probe history and exact next action rather than pretending the task is done.</p>
+            <code>FAILURE_HANDOFF</code>
+          </article>
+          <article>
+            <span>Scope drift</span>
+            <h3>Out-of-scope edit caught</h3>
+            <p>The phase tried to touch a file outside <code>allowed_paths</code>; the gate flagged it before completion.</p>
+            <code>SCOPE_DRIFT</code>
+          </article>
+        </div>
+      </section>
+
+      <section class="install section-shell" id="install" aria-labelledby="install-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Install</div>
+            <h2 id="install-title">GitHub Pages ready, command-line friendly.</h2>
+          </div>
+          <p>
+            This site is static. The repo can publish it from <code>site/</code> with GitHub Actions and no frontend build step.
+          </p>
+        </div>
+
+        <div class="install-tabs" role="tablist" aria-label="Install commands">
+          <button class="tab-button is-active" id="tab-claude" role="tab" aria-selected="true" aria-controls="panel-claude" data-tab="claude">Claude Code</button>
+          <button class="tab-button" id="tab-codex" role="tab" aria-selected="false" aria-controls="panel-codex" data-tab="codex">Codex</button>
+          <button class="tab-button" id="tab-pages" role="tab" aria-selected="false" aria-controls="panel-pages" data-tab="pages">GitHub Pages</button>
+        </div>
+
+        <div class="tab-panels">
+          <section class="tab-panel is-active" id="panel-claude" role="tabpanel" aria-labelledby="tab-claude" data-panel="claude">
+            <div class="code-window">
+              <div class="code-title">Claude Code marketplace install</div>
+              <button class="copy-button" type="button" data-copy="#claude-code">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8zM5 5h11v3M5 5v11h3"></path></svg>
+                Copy
+              </button>
+              <pre id="claude-code"><code>/plugin marketplace add https://github.com/robzilla1738/supergoal.git
+/plugin install supergoal@supergoal
+/reload-plugins</code></pre>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="panel-codex" role="tabpanel" aria-labelledby="tab-codex" data-panel="codex" hidden>
+            <div class="code-window">
+              <div class="code-title">Codex manual skill install</div>
+              <button class="copy-button" type="button" data-copy="#codex-code">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8zM5 5h11v3M5 5v11h3"></path></svg>
+                Copy
+              </button>
+              <pre id="codex-code"><code>mkdir -p ~/.codex/skills
+git clone https://github.com/robzilla1738/supergoal /tmp/supergoal-clone
+cp -R /tmp/supergoal-clone/skills/supergoal ~/.codex/skills/
+rm -rf /tmp/supergoal-clone</code></pre>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="panel-pages" role="tabpanel" aria-labelledby="tab-pages" data-panel="pages" hidden>
+            <div class="code-window">
+              <div class="code-title">Pages deployment included in this branch</div>
+              <button class="copy-button" type="button" data-copy="#pages-code">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8zM5 5h11v3M5 5v11h3"></path></svg>
+                Copy
+              </button>
+              <pre id="pages-code"><code>git add site .github/workflows/pages.yml
+git commit -m "Add GitHub Pages site"
+git push origin main
+
+# In GitHub: Settings -> Pages -> Source -> GitHub Actions</code></pre>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="files section-shell" id="files" aria-labelledby="files-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Repository anatomy</div>
+            <h2 id="files-title">Small package, load-bearing files.</h2>
+          </div>
+          <p>
+            Supergoal ships the skill and its runtime assets. Tests, docs, and this website stay in the repository.
+          </p>
+        </div>
+
+        <div class="file-layout">
+          <pre class="file-tree" aria-label="Repository file tree"><code>supergoal/
+├── skills/supergoal/
+│   ├── SKILL.md
+│   ├── scripts/
+│   │   ├── claim-run.sh
+│   │   ├── sg.py
+│   │   └── repo-state.sh
+│   ├── templates/
+│   │   ├── ROADMAP.md
+│   │   ├── STATE.md
+│   │   └── PROTOCOL.md
+│   └── references/
+├── tests/
+│   ├── sg-run-kernel.test.sh
+│   ├── claim-run.test.sh
+│   └── repo-state.test.sh
+├── site/
+└── .github/workflows/pages.yml</code></pre>
+          <div class="file-notes">
+            <article>
+              <h3><code>SKILL.md</code></h3>
+              <p>The main instruction surface that defines stages, intake, recon, plan review, and handoff behavior.</p>
+            </article>
+            <article>
+              <h3><code>sg.py</code></h3>
+              <p>Validates manifests, records events, gates phases, audits deliverables, resumes runs, and writes reports.</p>
+            </article>
+            <article>
+              <h3><code>repo-state.sh</code></h3>
+              <p>Checks deliverables against the complete working tree, including untracked files.</p>
+            </article>
+            <article>
+              <h3><code>PROTOCOL.md</code></h3>
+              <p>Defines the autonomous phase loop, evidence vault, gate commands, recovery blocks, audit, and report markers.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="markers section-shell" aria-labelledby="markers-title">
+        <div class="section-heading">
+          <div>
+            <div class="section-kicker">Transcript markers</div>
+            <h2 id="markers-title">The run says exactly where it is.</h2>
+          </div>
+        </div>
+        <div class="marker-strip" aria-label="Supergoal transcript markers">
+          <span>SUPERGOAL_PHASE_START</span>
+          <span>SUPERGOAL_PHASE_VERIFY</span>
+          <span>PHASE_GATE_VERIFY</span>
+          <span>SCOPE_DRIFT</span>
+          <span>TRUST_DEBT</span>
+          <span>MEMORY_SAVED</span>
+          <span>AUDIT_COMPLETE</span>
+          <span>RUN_REPORT_WRITTEN</span>
+          <span>SUPERGOAL_RUN_COMPLETE</span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <strong>Supergoal</strong>
+        <span>Plan deeply. Paste once. Gate, audit, and report before done.</span>
+      </div>
+      <a href="https://github.com/robzilla1738/supergoal" rel="noreferrer">View source</a>
+    </footer>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "run": {
+    "id": "scope-drift",
+    "title": "Scope Drift Fixture",
+    "task": "Show out-of-scope edit detection",
+    "status": "BLOCKED",
+    "current_phase": 1,
+    "run_root": "tests/fixtures/runs/scope-drift",
+    "baseline_ref": "fixture-baseline",
+    "host": "fixture",
+    "legacy": false,
+    "created_at": "2026-06-07T00:00:00+00:00",
+    "last_update": "2026-06-07T00:06:00+00:00"
+  },
+  "commands": [
+    {"id": "test", "class": "test", "command": "npm test", "required": true}
+  ],
+  "phases": [
+    {
+      "id": 1,
+      "name": "Build Feature",
+      "status": "blocked",
+      "allowed_paths": ["src/feature/"],
+      "depends_on": [],
+      "criteria": [
+        {"id": "p1-c1", "text": "Only feature files changed", "verification": "mechanical", "evidence": []}
+      ],
+      "commands": ["test"],
+      "deliverables": ["src/feature/index.ts"],
+      "required_evidence": ["commands/test.log"]
+    },
+    {
+      "id": 2,
+      "name": "Polish & Harden",
+      "status": "pending",
+      "allowed_paths": ["*"],
+      "depends_on": [1],
+      "criteria": [
+        {"id": "p2-c1", "text": "Final audit passes", "verification": "mechanical", "evidence": []}
+      ],
+      "commands": [],
+      "deliverables": [],
+      "required_evidence": []
+    }
+  ]
+}

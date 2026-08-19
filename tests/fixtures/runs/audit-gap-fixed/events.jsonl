@@ -1,0 +1,2 @@
+{"status":"fail","ts":"2026-06-07T00:12:00+00:00","type":"audit.fail","data":{"gaps":["phase 1: missing edge case test"]}}
+{"status":"pass","ts":"2026-06-07T00:18:00+00:00","type":"audit.pass"}

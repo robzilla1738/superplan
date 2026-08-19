@@ -4,7 +4,7 @@ Project-level instructions for Claude Code sessions opened in this repo. Read `A
 
 ## Quick orientation
 
-This repo is the source of truth for the `supergoal` skill — a Claude Code plugin that turns vague build requests into deeply-planned, autonomously-executed `/goal` runs with a final audit pass.
+This repo is the source of truth for the `supergoal` skill — a Claude Code plugin that turns vague build requests into deeply-planned, autonomously-executed `/goal` runs backed by a v1 run kernel (`run.json`, `events.jsonl`, evidence files, phase gates, final audit, and `report.html`).
 
 Full project doc: see [AGENTS.md](AGENTS.md).
 
@@ -12,15 +12,17 @@ Full project doc: see [AGENTS.md](AGENTS.md).
 
 ### File map you actually edit
 
-- `skills/supergoal/SKILL.md` — the skill content. Edit here for behavioral changes. ~565 lines (grew with v0.7's Stage 0 namespace-claim section; phase-loop section duplicates `PROTOCOL.md` and is a slim-down candidate).
+- `skills/supergoal/SKILL.md` — the skill content. Edit here for behavioral changes.
 - `skills/supergoal/references/*.md` — progressive-disclosure docs the agent reads when needed (`planning-depth.md`, `phase-design.md`, `goal-format.md`, `repo-state-comparison.md`).
 - `skills/supergoal/scripts/claim-run.sh` — atomically claims a unique per-run dir (`.supergoal/<slug>-XXXXXX` via `mktemp -d`) so concurrent runs in one working tree can't clobber each other. Edit here to change the namespacing/slug logic; tested by `tests/claim-run.test.sh`.
-- `skills/supergoal/scripts/repo-state.sh` — the complete-working-tree-vs-baseline comparison helper. Edit here to change how the audit/cleanliness checks detect committed/staged/unstaged/deleted/untracked work. Copied into the run's `.supergoal/<run-id>/` dir at Stage 7; tested by `tests/repo-state.test.sh`.
-- `skills/supergoal/templates/PROTOCOL.md` — execution loop + failure recovery + final audit. Edit here when changing the per-`/goal`-session protocol. Paths use the `{{RUN_ROOT}}` placeholder, `sed`-substituted to the concrete run dir at Stage 7.
-- `skills/supergoal/templates/STATE.md` — live-progress template the planner copies to `<run-root>/STATE.md` per run. Contains `Run root:` (this run's namespaced dir) and `Baseline ref:` (the HEAD sha captured at Stage 7 dispatch; the audit + cleanliness checks compare the complete working tree against it via `repo-state.sh`).
-- `skills/supergoal/templates/ROADMAP.md` — phase plan with `Deliverables:` bullets; the audit's deliverable check parses these bullets directly.
+- `skills/supergoal/scripts/sg.py` — v1 run kernel. Edit here to change manifest validation, event recording, phase gates, audit, resume, or report generation; tested by `tests/sg-run-kernel.test.sh`.
+- `skills/supergoal/scripts/repo-state.sh` — the complete-working-tree-vs-baseline comparison helper. Edit here to change how audit deliverables detect committed/staged/unstaged/deleted/untracked work. Copied into the run's `.supergoal/<run-id>/` dir at Stage 7; tested by `tests/repo-state.test.sh`.
+- `skills/supergoal/templates/PROTOCOL.md` — v1 execution loop + evidence vault + phase gates + failure recovery + final audit/report. Edit here when changing the per-`/goal`-session protocol. Paths use the `{{RUN_ROOT}}` placeholder, `sed`-substituted to the concrete run dir at Stage 7.
+- `skills/supergoal/templates/STATE.md` — human-readable progress mirror. `run.json` is canonical.
+- `skills/supergoal/templates/ROADMAP.md` — phase plan rendered from `run.json`.
 - `tests/claim-run.test.sh` — fixture tests for `claim-run.sh`, incl. the concurrent-claim race (repo-only; run with `bash tests/claim-run.test.sh`).
 - `tests/repo-state.test.sh` — fixture tests for `repo-state.sh` (repo-only; run with `bash tests/repo-state.test.sh`).
+- `tests/sg-run-kernel.test.sh` — fixture tests for `sg.py` (repo-only; run with `bash tests/sg-run-kernel.test.sh`).
 - `.claude-plugin/plugin.json` — bump `version` on every shipped change so the marketplace cache refreshes.
 - `CHANGELOG.md` — add a top entry per release.
 - `README.md` — public-facing only. Edit for docs / Mermaid diagram tweaks. No version bump needed.
@@ -31,6 +33,7 @@ Full project doc: see [AGENTS.md](AGENTS.md).
 claude plugin validate .claude-plugin/plugin.json
 claude plugin validate .claude-plugin/marketplace.json
 bash skills/supergoal/scripts/validate-phase.sh skills/supergoal/templates/phase-goal.txt
+bash tests/sg-run-kernel.test.sh
 bash tests/repo-state.test.sh   # expects: 47 passed, 0 failed
 bash tests/claim-run.test.sh    # expects: 23 passed, 0 failed
 ```
@@ -72,7 +75,7 @@ Everything in lowercase `supergoal`. The plugin name, marketplace name, skill fr
 
 ### Version bumping
 
-Source of truth is `.claude-plugin/plugin.json`'s `version`. Must match README's "Current: v..." line, the latest `CHANGELOG.md` entry, and the "Working state (as of vX.Y.Z — …)" line in `AGENTS.md`. Tag the same number: `git tag -a v0.6.x -m "..." && git push origin v0.6.x`.
+Source of truth is `.claude-plugin/plugin.json`'s `version`. Must match README's "Current: v..." line, the latest `CHANGELOG.md` entry, and the "Working state (as of vX.Y.Z — …)" line in `AGENTS.md`. Tag the same number: `git tag -a v1.0.x -m "..." && git push origin v1.0.x`.
 
 ### Slash command mechanics
 
@@ -84,10 +87,12 @@ Source of truth is `.claude-plugin/plugin.json`'s `version`. Must match README's
 
 **Inside the `/goal` session** (the autonomous run). The agent must print these named blocks; they're how the host evaluator + the user judge progress:
 
-- `SUPERGOAL_PHASE_START` / `SUPERGOAL_PHASE_VERIFY` (v0.6 added a `Cleanliness:` section) / `SUPERGOAL_PHASE_DONE`
+- `SUPERGOAL_RUN_KERNEL_READY`
+- `SUPERGOAL_PHASE_START` / `SUPERGOAL_PHASE_VERIFY` / `PHASE_GATE_VERIFY` / `SCOPE_DRIFT` / `TRUST_DEBT` / `SUPERGOAL_PHASE_DONE`
 - `MEMORY_SAVED`
-- `AUDIT_START` / `AUDIT_VERIFY` (v0.6 added a `Deliverables:` block from the diff-based check) / `AUDIT_GAPS` / `AUDIT_COMPLETE` (v0.6 added `Audit coverage:`) / `AUDIT_HANDOFF`
-- `SUPERGOAL_RUN_COMPLETE` (v0.6 prepends a `⚠ Audit coverage: …` honesty banner when trust-prior > 30%)
+- `AUDIT_START` / `AUDIT_VERIFY` / `AUDIT_GAPS` / `AUDIT_COMPLETE` / `AUDIT_HANDOFF`
+- `RUN_REPORT_WRITTEN`
+- `SUPERGOAL_RUN_COMPLETE`
 - `FAILURE_PROBE` / `FAILURE_ESCALATE` / `FAILURE_HANDOFF`
 
 **Inside the planner session** (Supergoal stages, before the `/goal` is dispatched). The user sees these but the `/goal` evaluator doesn't (it isn't active yet):
@@ -97,7 +102,7 @@ Source of truth is `.claude-plugin/plugin.json`'s `version`. Must match README's
 
 These are how the `/goal` evaluator decides the run is done. Don't rename the `/goal`-session markers without thinking through the protocol + the end-state condition string.
 
-The `/goal` end-state requires `SUPERGOAL_RUN_COMPLETE` preceded by `AUDIT_COMPLETE` and one `SUPERGOAL_PHASE_DONE` per phase, with no `FAILURE_HANDOFF` or `AUDIT_HANDOFF`.
+The `/goal` end-state requires `AUDIT_COMPLETE`, `RUN_REPORT_WRITTEN`, and `SUPERGOAL_RUN_COMPLETE`, with one `SUPERGOAL_PHASE_DONE` per phase and no `FAILURE_HANDOFF` or `AUDIT_HANDOFF`.
 
 ## Common pitfalls (field-tested)
 
@@ -108,9 +113,9 @@ The `/goal` end-state requires `SUPERGOAL_RUN_COMPLETE` preceded by `AUDIT_COMPL
 - **Codex install is a one-way copy** → users have to re-clone on update. Mention in any breaking-change CHANGELOG.
 - **The skill description is the trigger** → tweak it carefully. Lead with `/supergoal` and natural-language phrases users actually type. Keep it pushy.
 - **Updating SKILL.md/PROTOCOL.md? Codex stays in sync only via manual `rm -rf … && cp -R …`.** After any shipped change, re-run the copy and verify with `diff -r skills/supergoal ~/.codex/skills/supergoal` → expect `(no output)`. AGENTS.md's "Working state" section documents the latest verified sync.
-- **v0.6.1 cleanliness + deliverable checks compare the COMPLETE working tree vs `Baseline ref` via `repo-state.sh`** — not a `<Baseline ref>..HEAD` commit range (that missed every uncommitted change, the bug v0.6.1 fixed). Tracked changes come from the single-revision `git diff <Baseline ref>` (committed + staged + unstaged + deleted); untracked files are detected separately. `Baseline ref:` is still captured at Stage 7 from `git rev-parse HEAD 2>/dev/null || echo "no-git"`. If a user runs `/supergoal` in a directory without git history (or any invalid/unresolvable baseline), `repo-state.sh` degrades to a filesystem existence check and `added-lines` yields nothing — cleanliness counts go to 0, so phases in that mode should treat cleanliness as `trust-prior-verify`-shaped. The one documented strategy lives in `references/repo-state-comparison.md`; the logic is implemented once in `repo-state.sh` and tested by `tests/repo-state.test.sh`.
-- **Honesty test for v0.6 Stage 6a self-critique**: if it produces `clean` on essentially every real plan, it's theater and gets dropped. AGENTS.md "Open work" tracks the heuristic — don't defend the feature for its own sake.
-- **v0.7 namespaces every run under `.supergoal/<run-id>/`** (claimed atomically by `scripts/claim-run.sh` via `mktemp -d`). This is what stops two concurrent `/supergoal` runs in one working tree from clobbering each other's `STATE.md`/`ROADMAP.md`/`phases/`. Two consequences: (a) `PROTOCOL.md` + `phase-goal.txt` use a `{{RUN_ROOT}}` placeholder — Stage 7 `sed`-substitutes the concrete dir into the copied `PROTOCOL.md`, and the planner fills it into each phase spec; if you add a new `.supergoal/`-relative path to a template, use `{{RUN_ROOT}}/…`, not `.supergoal/…`. (b) Namespacing protects **planning** artifacts only — two `/goal` **executions** in the same tree still edit the same source files, so the Stage 0 coexistence warning steers parallel execution to separate `git worktree`s. Don't soften that warning into "parallel runs are safe."
+- **v1 deliverable checks compare the COMPLETE working tree vs `run.baseline_ref` via `repo-state.sh`** — not a `<Baseline ref>..HEAD` commit range. Tracked changes come from the single-revision `git diff <Baseline ref>` (committed + staged + unstaged + deleted); untracked files are detected separately. If a user runs `/supergoal` in a directory without git history, `repo-state.sh` degrades to a filesystem existence check. The one documented strategy lives in `references/repo-state-comparison.md`; the logic is implemented once in `repo-state.sh` and tested by `tests/repo-state.test.sh`.
+- **Honesty test for Stage 6a self-critique**: if it produces `clean` on essentially every real plan, it's theater and gets dropped. AGENTS.md "Open work" tracks the heuristic — don't defend the feature for its own sake.
+- **v1 namespaces every run under `.supergoal/<run-id>/`** (claimed atomically by `scripts/claim-run.sh` via `mktemp -d`). This stops two concurrent `/supergoal` runs from clobbering runtime artifacts. `PROTOCOL.md` + phase specs use a `{{RUN_ROOT}}` placeholder — Stage 7 `sed`-substitutes the concrete dir into the copied `PROTOCOL.md`, and the planner fills it into each phase spec. Namespacing protects artifacts only: two `/goal` executions in the same working tree still edit the same source files, so use separate `git worktree`s for parallel execution.
 
 ## When in doubt
 

@@ -1,0 +1,1 @@
+{"phase":1,"status":"fail","ts":"2026-06-07T00:06:00+00:00","type":"phase.gate.fail","data":{"errors":["SCOPE_DRIFT: README.md outside allowed_paths"]}}
