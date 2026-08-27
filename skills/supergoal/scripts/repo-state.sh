@@ -21,7 +21,13 @@
 #       = git ls-files --others --exclude-standard
 #         -> untracked files are diff-invisible, so they are detected separately.
 #   invalid / unavailable baseline ("no-git" sentinel, bogus sha, or non-repo)
-#       -> degrade gracefully to a filesystem existence test.
+#       -> `deliverable` degrades gracefully to a filesystem existence test and SAYS SO
+#          in its output ("baseline unavailable").
+#       -> `changed-files` / `added-lines` have no meaningful fallback: without a baseline
+#          there is no such thing as "what changed". They REFUSE, loudly, on stderr, with
+#          exit 3 — because printing an empty result would be read as "nothing changed"
+#          by every caller that pipes this into `wc -l` / `grep -c`, which is the exact
+#          silent-empty failure this helper was written to prevent.
 #
 # This script never mutates the repository or the index. All output is for the audit
 # transcript. Paths containing spaces are handled (callers must quote the path argument).
@@ -31,9 +37,11 @@
 #       -> "present — <evidence>" (exit 0) | "missing" (exit 1)
 #   repo-state.sh changed-files <baseline>
 #       -> newline-delimited paths changed since baseline (tracked + untracked + deleted)
+#          (unresolvable baseline -> empty stdout, diagnostic on stderr, exit 3)
 #   repo-state.sh added-lines   <baseline>
 #       -> every added/new line since baseline: tracked-diff '+' lines plus the full body
 #          of each untracked file (every line is "new"). Feed to grep for cleanliness counts.
+#          (unresolvable baseline -> empty stdout, diagnostic on stderr, exit 3)
 
 set -uo pipefail
 
@@ -45,6 +53,34 @@ baseline_ok() {
   [ -n "$b" ] || return 1
   [ "$b" = "no-git" ] && return 1
   git rev-parse --verify --quiet "${b}^{commit}" >/dev/null 2>&1
+}
+
+# refuse_unevaluable <subcommand> <baseline> — the baseline could not be resolved, so
+# there is nothing to compare the working tree against.
+#
+# WHY THIS IS NOT A `return 0`: the callers pipe this subcommand straight into `wc -l`
+# or `grep -c` for cleanliness and change counts. An empty stdout there reads as
+# "0 changed files" / "0 debug prints" — indistinguishable from a genuinely clean run,
+# and the audit records "clean" for a check that never ran. That is the same
+# silent-empty failure described at the top of this file, arriving through a different
+# door. So: stdout stays EMPTY (nothing must be miscounted), the reason goes to STDERR
+# (which survives `| wc -l`, unlike the exit status), and the exit code is a dedicated
+# 3 — distinct from 1 ("missing") and 2 ("usage") so a caller can tell the three apart.
+refuse_unevaluable() {
+  local sub="$1" baseline="$2" reason
+  if in_git_repo; then
+    reason="baseline '${baseline}' does not resolve to a commit in this repository"
+  else
+    reason="not inside a git work tree"
+  fi
+  {
+    printf 'repo-state.sh: %s UNEVALUABLE — %s.\n' "$sub" "$reason"
+    printf '  Refusing to print an empty result: an empty answer here would be read as\n'
+    printf '  "nothing changed", and that is not what happened — there was nothing to\n'
+    printf '  compare against. Fix the baseline, or use "deliverable", which has a\n'
+    printf '  documented filesystem fallback.\n'
+  } >&2
+  return 3
 }
 
 cmd_deliverable() {
@@ -90,26 +126,30 @@ cmd_deliverable() {
 
 cmd_changed_files() {
   local baseline="$1"
-  if in_git_repo && baseline_ok "$baseline"; then
-    {
-      git diff --name-only "$baseline" 2>/dev/null || true   # modified/staged/deleted
-      git ls-files --others --exclude-standard 2>/dev/null || true   # untracked
-    } | LC_ALL=C sort -u | sed '/^$/d'
+  if ! in_git_repo || ! baseline_ok "$baseline"; then
+    refuse_unevaluable changed-files "$baseline"
+    return $?
   fi
+  {
+    git diff --name-only "$baseline" 2>/dev/null || true   # modified/staged/deleted
+    git ls-files --others --exclude-standard 2>/dev/null || true   # untracked
+  } | LC_ALL=C sort -u | sed '/^$/d'
   return 0
 }
 
 cmd_added_lines() {
   local baseline="$1"
-  if in_git_repo && baseline_ok "$baseline"; then
-    # Added lines from tracked changes (strip the leading '+', skip the '+++' file header).
-    git diff "$baseline" 2>/dev/null | grep '^+' | grep -v '^+++' | sed 's/^+//' || true
-    # Full body of every untracked file — each line counts as newly added.
-    # Skip binaries: added-lines feeds text greps, so binary bodies are only noise.
-    git ls-files --others --exclude-standard -z 2>/dev/null | while IFS= read -r -d '' f; do
-      [ -f "$f" ] && LC_ALL=C grep -Iq . "$f" 2>/dev/null && cat -- "$f"
-    done
+  if ! in_git_repo || ! baseline_ok "$baseline"; then
+    refuse_unevaluable added-lines "$baseline"
+    return $?
   fi
+  # Added lines from tracked changes (strip the leading '+', skip the '+++' file header).
+  git diff "$baseline" 2>/dev/null | grep '^+' | grep -v '^+++' | sed 's/^+//' || true
+  # Full body of every untracked file — each line counts as newly added.
+  # Skip binaries: added-lines feeds text greps, so binary bodies are only noise.
+  git ls-files --others --exclude-standard -z 2>/dev/null | while IFS= read -r -d '' f; do
+    [ -f "$f" ] && LC_ALL=C grep -Iq . "$f" 2>/dev/null && cat -- "$f"
+  done
   return 0
 }
 
@@ -136,8 +176,11 @@ repo-state.sh — evaluate the complete working-tree state vs a baseline commit.
   repo-state.sh changed-files <baseline>          paths changed since baseline
   repo-state.sh added-lines   <baseline>          added/new lines since baseline
 
+Exit codes: 0 ok / 1 deliverable missing / 2 usage / 3 baseline unevaluable
+(changed-files, added-lines — stdout stays empty, reason on stderr).
+
 <baseline> is a commit sha (or "no-git" / any invalid ref to force the filesystem
-fallback). Compares the working tree — not just HEAD — so uncommitted, staged, and
+fallback — which only `deliverable` has). Compares the working tree — not just HEAD — so uncommitted, staged, and
 untracked work is included. See references/repo-state-comparison.md.
 EOF
     exit 2
